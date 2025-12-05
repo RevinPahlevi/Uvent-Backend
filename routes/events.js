@@ -13,4 +13,7 @@ router.get('/', eventController.getAllEvents);
 // [GET] /api/events/my-events/:userId
 router.get('/my-events/:userId', eventController.getMyCreatedEvents);
 
+// [PUT] /api/events/:id (Update Event)
+router.put('/:id', eventController.updateEvent);
+
 module.exports = router;

@@ -23,6 +23,28 @@ function reformatDate(dateStr) {
     }
 }
 
+// Fungsi untuk format tanggal dari MySQL Date object ke string YYYY-MM-DD
+// Ini memperbaiki masalah timezone yang menyebabkan tanggal mundur 1 hari
+function formatDateForResponse(dateValue) {
+    if (!dateValue) return null;
+    if (dateValue instanceof Date) {
+        // Gunakan getUTC untuk menghindari konversi timezone
+        const year = dateValue.getFullYear();
+        const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+        const day = String(dateValue.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    return dateValue;
+}
+
+// Fungsi untuk memproses events dan memperbaiki format tanggal
+function processEventsDate(events) {
+    return events.map(event => ({
+        ...event,
+        date: formatDateForResponse(event.date)
+    }));
+}
+
 // (Fungsi createEvent sudah benar dari langkah sebelumnya)
 exports.createEvent = async (req, res) => {
     try {
@@ -32,7 +54,15 @@ exports.createEvent = async (req, res) => {
             creator_id
         } = req.body;
 
+        // DEBUG: Log data yang diterima
+        console.log("=== CREATE EVENT DEBUG ===");
+        console.log("Received date:", date);
+        console.log("Received timeStart:", timeStart);
+        console.log("Received timeEnd:", timeEnd);
+
         const formattedDate = reformatDate(date);
+        console.log("Formatted date for DB:", formattedDate);
+
         const quotaInt = parseInt(quota, 10) || 0;
         const creatorIdInt = parseInt(creator_id, 10) || null;
 
@@ -59,7 +89,11 @@ exports.getAllEvents = async (req, res) => {
     try {
         const sql = "SELECT * FROM events WHERE status = 'disetujui' ORDER BY date DESC";
         const [events] = await db.query(sql);
-        res.status(200).json({ status: 'success', data: events });
+
+        // Proses tanggal untuk menghindari masalah timezone
+        const processedEvents = processEventsDate(events);
+
+        res.status(200).json({ status: 'success', data: processedEvents });
     } catch (error) {
         console.error("Error getting events:", error);
         res.status(500).json({ status: 'fail', message: error.message });
@@ -79,9 +113,54 @@ exports.getMyCreatedEvents = async (req, res) => {
         const sql = "SELECT * FROM events WHERE creator_id = ? ORDER BY date DESC";
         const [events] = await db.query(sql, [userId]);
 
-        res.status(200).json({ status: 'success', data: events });
+        // Proses tanggal untuk menghindari masalah timezone
+        const processedEvents = processEventsDate(events);
+
+        res.status(200).json({ status: 'success', data: processedEvents });
     } catch (error) {
         console.error("Error getting my events:", error);
+        res.status(500).json({ status: 'fail', message: error.message });
+    }
+};
+
+// --- FUNGSI UPDATE EVENT ---
+exports.updateEvent = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const {
+            title, type, date, timeStart, timeEnd,
+            platformType, locationDetail, quota, thumbnailUri
+        } = req.body;
+
+        console.log("=== UPDATE EVENT DEBUG ===");
+        console.log("Event ID:", id);
+        console.log("Received data:", req.body);
+
+        const formattedDate = reformatDate(date);
+        const quotaInt = parseInt(quota, 10) || 0;
+
+        const sql = `UPDATE events SET 
+                        title = ?, 
+                        type = ?, 
+                        date = ?, 
+                        time_start = ?, 
+                        time_end = ?,
+                        platform_type = ?, 
+                        location_detail = ?, 
+                        quota = ?, 
+                        thumbnail_uri = ?
+                     WHERE id = ?`;
+
+        await db.query(sql, [
+            title, type, formattedDate, timeStart, timeEnd,
+            platformType, locationDetail, quotaInt, thumbnailUri,
+            id
+        ]);
+
+        res.status(200).json({ status: 'success', message: 'Event berhasil diperbarui' });
+
+    } catch (error) {
+        console.error("Error updating event:", error);
         res.status(500).json({ status: 'fail', message: error.message });
     }
 };
