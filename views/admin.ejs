@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Uvent</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; }
+        h1 { color: #006400; }
+        .event-list { display: flex; flex-direction: column; gap: 15px; }
+        .event-card { background-color: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .event-card h3 { margin-top: 0; }
+        .event-card p { margin: 5px 0; }
+        .event-card button { background-color: #28a745; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-size: 14px; }
+        .event-card button:hover { background-color: #218838; }
+    </style>
+</head>
+<body>
+    <h1>Panel Admin Uvent</h1>
+    <h2>Event Menunggu Persetujuan</h2>
+    <div id="event-list" class="event-list">
+        <p>Memuat event...</p>
+    </div>
+
+    <script>
+        // Fungsi untuk mengambil data event yang 'menunggu_persetujuan'
+        async function fetchPendingEvents() {
+            try {
+                // Kita panggil API admin yang akan kita buat nanti
+                const response = await fetch('/api/admin/pending');
+                const result = await response.json();
+                const eventListEl = document.getElementById('event-list');
+
+                if (result.status === 'success' && result.data.length > 0) {
+                    eventListEl.innerHTML = ''; // Kosongkan list
+                    result.data.forEach(event => {
+                        const card = document.createElement('div');
+                        card.className = 'event-card';
+                        card.innerHTML = `
+                            <h3>${event.title} (ID: ${event.id})</h3>
+                            <p><strong>Tipe:</strong> ${event.type}</p>
+                            <p><strong>Tanggal:</strong> ${event.date}</p>
+                            <p><strong>Lokasi:</strong> ${event.location_detail}</p>
+                            <p><strong>Dibuat oleh User ID:</strong> ${event.creator_id}</p>
+                            <button onclick="approveEvent(${event.id})">Setujui Event</button>
+                        `;
+                        eventListEl.appendChild(card);
+                    });
+                } else {
+                    eventListEl.innerHTML = '<p>Tidak ada event yang menunggu persetujuan.</p>';
+                }
+            } catch (error) {
+                document.getElementById('event-list').innerHTML = '<p>Gagal memuat event.</p>';
+                console.error('Error fetching events:', error);
+            }
+        }
+
+        // Fungsi untuk menyetujui event
+        async function approveEvent(eventId) {
+            try {
+                const response = await fetch(`/api/admin/approve/${eventId}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    alert('Event berhasil disetujui!');
+                    fetchPendingEvents(); // Muat ulang daftar
+                } else {
+                    alert('Gagal menyetujui event: ' + result.message);
+                }
+            } catch (error) {
+                alert('Terjadi error: ' + error.message);
+            }
+        }
+
+        // Panggil fungsi saat halaman dimuat
+        document.addEventListener('DOMContentLoaded', fetchPendingEvents);
+    </script>
+</body>
+</html>
