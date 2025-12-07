@@ -14,4 +14,8 @@ router.get('/event/:eventId', feedbackController.getFeedbackByEvent);
 // [DELETE] /api/feedback/:id
 router.delete('/:id', feedbackController.deleteFeedback);
 
+// Rute untuk mengupdate feedback
+// [PUT] /api/feedback/:id
+router.put('/:id', feedbackController.updateFeedback);
+
 module.exports = router;

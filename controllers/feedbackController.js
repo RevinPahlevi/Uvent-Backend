@@ -120,3 +120,47 @@ exports.deleteFeedback = async (req, res) => {
         res.status(500).json({ status: 'fail', message: error.message });
     }
 };
+
+// Fungsi untuk mengupdate feedback
+exports.updateFeedback = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { user_id, rating, review, photo_uri } = req.body;
+
+        console.log("=== UPDATE FEEDBACK DEBUG ===");
+        console.log("Feedback ID:", id);
+        console.log("User ID:", user_id);
+
+        // Cek apakah feedback ada dan milik user yang sama
+        const [feedback] = await db.query(
+            'SELECT user_id FROM feedbacks WHERE id = ?',
+            [id]
+        );
+
+        if (feedback.length === 0) {
+            return res.status(404).json({ status: 'fail', message: 'Feedback tidak ditemukan' });
+        }
+
+        if (feedback[0].user_id !== parseInt(user_id)) {
+            return res.status(403).json({ status: 'fail', message: 'Anda tidak memiliki izin untuk mengubah ulasan ini' });
+        }
+
+        // Validasi rating
+        if (rating && (rating < 1 || rating > 5)) {
+            return res.status(400).json({ status: 'fail', message: 'Rating harus antara 1-5' });
+        }
+
+        const sql = `UPDATE feedbacks SET 
+                        rating = COALESCE(?, rating),
+                        review = COALESCE(?, review),
+                        photo_uri = ?
+                     WHERE id = ?`;
+
+        await db.query(sql, [rating, review, photo_uri || null, id]);
+
+        res.status(200).json({ status: 'success', message: 'Ulasan berhasil diperbarui' });
+    } catch (error) {
+        console.error("Error updating feedback:", error);
+        res.status(500).json({ status: 'fail', message: error.message });
+    }
+};

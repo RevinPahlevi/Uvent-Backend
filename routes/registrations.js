@@ -18,4 +18,8 @@ router.get('/user/:userId', registrationController.getMyRegistrationsByUserId);
 // [DELETE] /api/registrations/:id
 router.delete('/:id', registrationController.cancelRegistration);
 
+// Rute untuk mengupdate pendaftaran
+// [PUT] /api/registrations/:id
+router.put('/:id', registrationController.updateRegistration);
+
 module.exports = router;
