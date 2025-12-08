@@ -2,16 +2,23 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
 
-// Rute untuk menampilkan halaman web (EJS)
-// Akan diakses di /api/admin
+// Halaman web admin (EJS)
 router.get('/', adminController.renderAdminPage);
 
-// Rute API untuk mengambil data event (dipanggil oleh JavaScript di EJS)
-// Akan diakses di /api/admin/pending
-router.get('/pending', adminController.getPendingEvents);
+// API Login
+router.post('/login', adminController.adminLogin);
 
-// Rute API untuk menyetujui event
-// Akan diakses di /api/admin/approve/1 (contoh)
-router.post('/approve/:id', adminController.approveEvent);
+// API untuk mengambil events berdasarkan status
+router.get('/events/all', adminController.getAllEventsAdmin);
+router.get('/events/pending', adminController.getPendingEvents);
+router.get('/events/approved', adminController.getApprovedEvents);
+router.get('/events/rejected', adminController.getRejectedEvents);
+
+// API untuk detail event
+router.get('/events/:id', adminController.getEventById);
+
+// API untuk approve/reject event
+router.post('/events/:id/approve', adminController.approveEvent);
+router.post('/events/:id/reject', adminController.rejectEvent);
 
 module.exports = router;

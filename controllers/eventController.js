@@ -54,11 +54,14 @@ exports.createEvent = async (req, res) => {
             creator_id
         } = req.body;
 
-        // DEBUG: Log data yang diterima
+        // DEBUG: Log semua data yang diterima
         console.log("=== CREATE EVENT DEBUG ===");
+        console.log("Received body:", JSON.stringify(req.body, null, 2));
         console.log("Received date:", date);
         console.log("Received timeStart:", timeStart);
         console.log("Received timeEnd:", timeEnd);
+        console.log("Received thumbnailUri:", thumbnailUri);
+        console.log("Type of thumbnailUri:", typeof thumbnailUri);
 
         const formattedDate = reformatDate(date);
         console.log("Formatted date for DB:", formattedDate);
@@ -66,10 +69,17 @@ exports.createEvent = async (req, res) => {
         const quotaInt = parseInt(quota, 10) || 0;
         const creatorIdInt = parseInt(creator_id, 10) || null;
 
-        // Auto-approve event (status = 'disetujui')
+        // Event baru menunggu persetujuan admin (status = 'menunggu')
         const sql = `INSERT INTO events 
-                        (title, type, date, time_start, time_end, platform_type, location_detail, quota, thumbnail_uri, creator_id, status)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'disetujui')`;
+                        (title, type, date, time_start, time_end, platform_type, location_detail, quota, thumbnail_uri, creator_id, status, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'menunggu', NOW())`;
+
+        // DEBUG: Log nilai yang akan dimasukkan ke DB
+        console.log("Values for DB insert:", {
+            title, type, formattedDate, timeStart, timeEnd,
+            platformType, locationDetail, quotaInt, thumbnailUri,
+            creatorIdInt
+        });
 
         await db.query(sql, [
             title, type, formattedDate, timeStart, timeEnd,
@@ -77,6 +87,7 @@ exports.createEvent = async (req, res) => {
             creatorIdInt
         ]);
 
+        console.log("Event created successfully with thumbnailUri:", thumbnailUri);
         res.status(201).json({ status: 'success', message: 'Event berhasil dibuat' });
 
     } catch (error) {
