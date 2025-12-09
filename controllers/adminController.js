@@ -65,12 +65,13 @@ exports.getAllEventsAdmin = async (req, res) => {
 };
 
 // 4. Get PENDING events (untuk tab "Diproses")
+// Menangkap event dengan status 'menunggu' DAN status kosong ''
 exports.getPendingEvents = async (req, res) => {
     try {
         const sql = `SELECT e.*, u.name as creator_name 
                      FROM events e 
                      LEFT JOIN users u ON e.creator_id = u.id 
-                     WHERE e.status = 'menunggu'
+                     WHERE e.status = 'menunggu' OR e.status = '' OR e.status IS NULL
                      ORDER BY e.created_at ASC`;
         const [events] = await db.query(sql);
         const processedEvents = processEventsDate(events);
