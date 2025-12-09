@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uvent Admin - Verifikasi Event</title>
+    <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Login Page -->
+    <div id="loginContainer" class="login-container">
+        <div class="login-card">
+            <div class="login-logo">🎫</div>
+            <h1 class="login-title">Uvent Admin</h1>
+            <p class="login-subtitle">Masuk untuk mengelola verifikasi event</p>
+            
+            <div id="loginError" class="login-error"></div>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" placeholder="Masukkan username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" placeholder="Masukkan password" required>
+                </div>
+                <button type="submit" class="btn-login">Masuk</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboardContainer" class="dashboard-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="header-actions">
+                    <div>
+                        <h1>Verifikasi Event</h1>
+                        <p>Kelola dan Verifikasi Pengajuan Event dari Penyelenggara</p>
+                    </div>
+                    <button class="btn-logout" onclick="logout()">
+                        🚪 Logout
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="card">
+                <!-- Tabs -->
+                <div class="tabs">
+                    <div class="tab active" data-tab="all">
+                        Semua <span class="badge">0</span>
+                    </div>
+                    <div class="tab" data-tab="pending">
+                        Diproses <span class="badge">0</span>
+                    </div>
+                    <div class="tab" data-tab="approved">
+                        Disetujui <span class="badge">0</span>
+                    </div>
+                    <div class="tab" data-tab="rejected">
+                        Ditolak <span class="badge">0</span>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters">
+                    <div class="search-box">
+                        <input type="text" id="searchInput" placeholder="Cari Event...">
+                    </div>
+                    <select id="typeFilter" class="filter-select">
+                        <option value="">Semua Jenis</option>
+                        <option value="Seminar">Seminar</option>
+                        <option value="Workshop">Workshop</option>
+                        <option value="Talkshow">Talkshow</option>
+                        <option value="Skill Lab">Skill Lab</option>
+                    </select>
+                </div>
+
+                <!-- Table -->
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nama Event</th>
+                                <th>Jenis Event</th>
+                                <th>Pengaju</th>
+                                <th>Waktu Pengajuan</th>
+                                <th>Status</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="eventsTableBody">
+                            <tr>
+                                <td colspan="6">
+                                    <div class="loading">
+                                        <div class="spinner"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Detail Modal -->
+    <div id="modalOverlay" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <button class="modal-back" onclick="closeModal()">←</button>
+                <span class="modal-title">Detail Event</span>
+            </div>
+            <div id="modalBody" class="modal-body">
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+            <div id="modalFooter" class="modal-footer"></div>
+        </div>
+    </div>
+
+    <script src="/js/admin.js"></script>
+</body>
+</html>
