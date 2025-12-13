@@ -54,11 +54,14 @@ exports.createEvent = async (req, res) => {
             creator_id
         } = req.body;
 
-        // DEBUG: Log data yang diterima
+        // DEBUG: Log semua data yang diterima
         console.log("=== CREATE EVENT DEBUG ===");
+        console.log("Received body:", JSON.stringify(req.body, null, 2));
         console.log("Received date:", date);
         console.log("Received timeStart:", timeStart);
         console.log("Received timeEnd:", timeEnd);
+        console.log("Received thumbnailUri:", thumbnailUri);
+        console.log("Type of thumbnailUri:", typeof thumbnailUri);
 
         const formattedDate = reformatDate(date);
         console.log("Formatted date for DB:", formattedDate);
@@ -66,9 +69,17 @@ exports.createEvent = async (req, res) => {
         const quotaInt = parseInt(quota, 10) || 0;
         const creatorIdInt = parseInt(creator_id, 10) || null;
 
+        // Event baru menunggu persetujuan admin (status = 'menunggu')
         const sql = `INSERT INTO events 
-                        (title, type, date, time_start, time_end, platform_type, location_detail, quota, thumbnail_uri, creator_id)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+                        (title, type, date, time_start, time_end, platform_type, location_detail, quota, thumbnail_uri, creator_id, status, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'menunggu', NOW())`;
+
+        // DEBUG: Log nilai yang akan dimasukkan ke DB
+        console.log("Values for DB insert:", {
+            title, type, formattedDate, timeStart, timeEnd,
+            platformType, locationDetail, quotaInt, thumbnailUri,
+            creatorIdInt
+        });
 
         await db.query(sql, [
             title, type, formattedDate, timeStart, timeEnd,
@@ -76,7 +87,8 @@ exports.createEvent = async (req, res) => {
             creatorIdInt
         ]);
 
-        res.status(201).json({ status: 'success', message: 'Event berhasil dibuat dan sedang ditinjau admin' });
+        console.log("Event created successfully with thumbnailUri:", thumbnailUri);
+        res.status(201).json({ status: 'success', message: 'Event berhasil dibuat' });
 
     } catch (error) {
         console.error("Error creating event:", error);
@@ -161,6 +173,52 @@ exports.updateEvent = async (req, res) => {
 
     } catch (error) {
         console.error("Error updating event:", error);
+        res.status(500).json({ status: 'fail', message: error.message });
+    }
+};
+
+// --- FUNGSI DELETE EVENT ---
+exports.deleteEvent = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { creator_id } = req.body;
+
+        console.log("=== DELETE EVENT DEBUG ===");
+        console.log("Event ID:", id);
+        console.log("Creator ID:", creator_id);
+
+        // Cek apakah event ada dan milik creator yang sama
+        const [event] = await db.query(
+            'SELECT creator_id FROM events WHERE id = ?',
+            [id]
+        );
+
+        if (event.length === 0) {
+            return res.status(404).json({ status: 'fail', message: 'Event tidak ditemukan' });
+        }
+
+        // Validasi ownership (optional - bisa dinonaktifkan jika tidak diperlukan)
+        if (creator_id && event[0].creator_id !== parseInt(creator_id)) {
+            return res.status(403).json({ status: 'fail', message: 'Anda tidak memiliki izin untuk menghapus event ini' });
+        }
+
+        // Hapus registrations terkait terlebih dahulu
+        await db.query('DELETE FROM registrations WHERE event_id = ?', [id]);
+
+        // Hapus feedbacks terkait
+        await db.query('DELETE FROM feedbacks WHERE event_id = ?', [id]);
+
+        // Hapus documentations terkait
+        await db.query('DELETE FROM documentations WHERE event_id = ?', [id]);
+
+        // Hapus event
+        const sql = 'DELETE FROM events WHERE id = ?';
+        await db.query(sql, [id]);
+
+        res.status(200).json({ status: 'success', message: 'Event berhasil dihapus' });
+
+    } catch (error) {
+        console.error("Error deleting event:", error);
         res.status(500).json({ status: 'fail', message: error.message });
     }
 };
