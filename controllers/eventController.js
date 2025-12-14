@@ -62,12 +62,37 @@ exports.createEvent = async (req, res) => {
         console.log("Received timeEnd:", timeEnd);
         console.log("Received thumbnailUri:", thumbnailUri);
         console.log("Type of thumbnailUri:", typeof thumbnailUri);
+        console.log("Received creator_id:", creator_id);
+        console.log("Type of creator_id:", typeof creator_id);
 
         const formattedDate = reformatDate(date);
         console.log("Formatted date for DB:", formattedDate);
 
         const quotaInt = parseInt(quota, 10) || 0;
-        const creatorIdInt = parseInt(creator_id, 10) || null;
+
+        // PERBAIKAN: Better validation for creator_id
+        // Handle null, undefined, empty string, or NaN values
+        let creatorIdInt = null;
+        if (creator_id !== null && creator_id !== undefined && creator_id !== '') {
+            const parsed = parseInt(creator_id, 10);
+            if (!isNaN(parsed)) {
+                creatorIdInt = parsed;
+            }
+        }
+        console.log("Parsed creator_id for DB:", creatorIdInt);
+
+        // VALIDASI: Cek field wajib
+        if (!title || !type || !date || !timeStart || !timeEnd || !platformType || !locationDetail || !quota) {
+            console.error("❌ Validation failed: Missing required fields");
+            return res.status(400).json({
+                status: 'fail',
+                message: 'Semua field wajib diisi'
+            });
+        }
+
+        // Handle thumbnailUri - jika null/undefined/empty, set sebagai NULL di database
+        const thumbnailUriValue = (thumbnailUri && thumbnailUri.trim() !== '') ? thumbnailUri : null;
+        console.log("Final thumbnailUri for DB:", thumbnailUriValue);
 
         // Event baru menunggu persetujuan admin (status = 'menunggu')
         const sql = `INSERT INTO events 
@@ -77,22 +102,34 @@ exports.createEvent = async (req, res) => {
         // DEBUG: Log nilai yang akan dimasukkan ke DB
         console.log("Values for DB insert:", {
             title, type, formattedDate, timeStart, timeEnd,
-            platformType, locationDetail, quotaInt, thumbnailUri,
+            platformType, locationDetail, quotaInt, thumbnailUriValue,
             creatorIdInt
         });
 
         await db.query(sql, [
             title, type, formattedDate, timeStart, timeEnd,
-            platformType, locationDetail, quotaInt, thumbnailUri,
+            platformType, locationDetail, quotaInt, thumbnailUriValue,
             creatorIdInt
         ]);
 
-        console.log("Event created successfully with thumbnailUri:", thumbnailUri);
+        console.log("✅ Event created successfully");
         res.status(201).json({ status: 'success', message: 'Event berhasil dibuat' });
 
     } catch (error) {
-        console.error("Error creating event:", error);
-        res.status(500).json({ status: 'fail', message: error.message });
+        console.error("❌ Error creating event:", error);
+        console.error("Error stack:", error.stack);
+
+        // Provide more detailed error message
+        let errorMessage = 'Gagal membuat event';
+        if (error.code === 'ER_DUP_ENTRY') {
+            errorMessage = 'Event dengan data yang sama sudah ada';
+        } else if (error.code === 'ER_NO_REFERENCED_ROW_2') {
+            errorMessage = 'Creator ID tidak valid';
+        } else if (error.sqlMessage) {
+            errorMessage = `Database error: ${error.sqlMessage}`;
+        }
+
+        res.status(500).json({ status: 'fail', message: errorMessage });
     }
 };
 

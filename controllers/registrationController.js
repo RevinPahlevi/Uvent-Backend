@@ -30,6 +30,32 @@ exports.registerEvent = async (req, res) => {
             });
         }
 
+        // VALIDASI BACKEND: Cek apakah event sudah dimulai
+        const [eventData] = await db.query(
+            'SELECT date, time_start, time_end FROM events WHERE id = ?',
+            [event_id]
+        );
+
+        if (eventData.length === 0) {
+            return res.status(404).json({
+                status: 'fail',
+                message: 'Event tidak ditemukan'
+            });
+        }
+
+        const event = eventData[0];
+
+        // Gabungkan tanggal dan waktu
+        const eventStartDateTime = new Date(`${event.date} ${event.time_start}`);
+        const now = new Date();
+
+        if (eventStartDateTime < now) {
+            return res.status(400).json({
+                status: 'fail',
+                message: 'Event sudah dimulai, pendaftaran ditutup'
+            });
+        }
+
         // Cek apakah user sudah terdaftar di event ini (berdasarkan user_id dan event_id)
         const [existing] = await db.query(
             'SELECT id FROM registrations WHERE event_id = ? AND (user_id = ? OR nim = ?)',
@@ -103,9 +129,10 @@ exports.getMyRegistrationsByUserId = async (req, res) => {
         console.log("=== GET MY REGISTRATIONS BY USER ID ===");
         console.log("userId:", userId);
 
+
         const sql = `SELECT r.id as registration_id, r.event_id, r.name, r.nim, r.fakultas, 
                             r.jurusan, r.email, r.phone, r.krs_uri, r.created_at,
-                            e.title, e.type, e.date, e.time_start, e.time_end, 
+                            e.id, e.title, e.type, e.date, e.time_start, e.time_end, 
                             e.platform_type, e.location_detail, e.quota, e.status,
                             e.thumbnail_uri, e.creator_id
                      FROM registrations r
@@ -115,15 +142,25 @@ exports.getMyRegistrationsByUserId = async (req, res) => {
 
         const [registrations] = await db.query(sql, [userId]);
 
-        // Format tanggal
-        const processedRegistrations = registrations.map(reg => ({
-            ...reg,
-            date: formatDateForResponse(reg.date)
+        // Transform ke format event (sama seperti getMyCreatedEvents)
+        const events = registrations.map(reg => ({
+            id: reg.id,
+            title: reg.title,
+            type: reg.type,
+            date: formatDateForResponse(reg.date),
+            time_start: reg.time_start,
+            time_end: reg.time_end,
+            platform_type: reg.platform_type,
+            location_detail: reg.location_detail,
+            quota: reg.quota,
+            status: reg.status,
+            thumbnail_uri: reg.thumbnail_uri,
+            creator_id: reg.creator_id
         }));
 
-        console.log("Found registrations:", processedRegistrations.length);
+        console.log("Found registrations:", events.length);
 
-        res.status(200).json({ status: 'success', data: processedRegistrations });
+        res.status(200).json({ status: 'success', data: events });
     } catch (error) {
         console.error("Error getting registrations by user:", error);
         res.status(500).json({ status: 'fail', message: error.message });
