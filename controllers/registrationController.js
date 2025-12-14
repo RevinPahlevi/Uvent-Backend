@@ -30,17 +30,19 @@ exports.registerEvent = async (req, res) => {
             });
         }
 
-        // Cek apakah user sudah terdaftar di event ini (berdasarkan user_id)
-        const [existingUser] = await db.query(
-            'SELECT id FROM registrations WHERE event_id = ? AND user_id = ?',
-            [event_id, user_id]
-        );
+        // Cek apakah user sudah terdaftar di event ini (HANYA jika user_id ada/tidak null)
+        if (user_id) {
+            const [existingUser] = await db.query(
+                'SELECT id FROM registrations WHERE event_id = ? AND user_id = ?',
+                [event_id, user_id]
+            );
 
-        if (existingUser.length > 0) {
-            return res.status(409).json({
-                status: 'fail',
-                message: 'Anda sudah terdaftar di event ini'
-            });
+            if (existingUser.length > 0) {
+                return res.status(409).json({
+                    status: 'fail',
+                    message: 'Anda sudah terdaftar di event ini'
+                });
+            }
         }
 
         // Cek apakah NIM sudah terdaftar di event ini (NIM harus unik per event)
