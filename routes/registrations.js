@@ -22,4 +22,8 @@ router.delete('/:id', registrationController.cancelRegistration);
 // [PUT] /api/registrations/:id
 router.put('/:id', registrationController.updateRegistration);
 
+// Rute untuk mendapatkan peserta per event (untuk creator)
+// [GET] /api/registrations/event/:eventId/participants
+router.get('/event/:eventId/participants', registrationController.getParticipantsByEvent);
+
 module.exports = router;

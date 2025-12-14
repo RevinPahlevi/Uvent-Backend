@@ -30,16 +30,29 @@ exports.registerEvent = async (req, res) => {
             });
         }
 
-        // Cek apakah user sudah terdaftar di event ini (berdasarkan user_id dan event_id)
-        const [existing] = await db.query(
-            'SELECT id FROM registrations WHERE event_id = ? AND (user_id = ? OR nim = ?)',
-            [event_id, user_id, nim]
+        // Cek apakah user sudah terdaftar di event ini (berdasarkan user_id)
+        const [existingUser] = await db.query(
+            'SELECT id FROM registrations WHERE event_id = ? AND user_id = ?',
+            [event_id, user_id]
         );
 
-        if (existing.length > 0) {
+        if (existingUser.length > 0) {
             return res.status(409).json({
                 status: 'fail',
                 message: 'Anda sudah terdaftar di event ini'
+            });
+        }
+
+        // Cek apakah NIM sudah terdaftar di event ini (NIM harus unik per event)
+        const [existingNim] = await db.query(
+            'SELECT id FROM registrations WHERE event_id = ? AND nim = ?',
+            [event_id, nim]
+        );
+
+        if (existingNim.length > 0) {
+            return res.status(409).json({
+                status: 'fail',
+                message: 'NIM sudah terdaftar di event ini. Setiap NIM hanya boleh mendaftar sekali per event.'
             });
         }
 
@@ -189,6 +202,33 @@ exports.updateRegistration = async (req, res) => {
         res.status(200).json({ status: 'success', message: 'Pendaftaran berhasil diperbarui' });
     } catch (error) {
         console.error("Error updating registration:", error);
+        res.status(500).json({ status: 'fail', message: error.message });
+    }
+};
+
+// Fungsi untuk mendapatkan peserta yang terdaftar di suatu event (untuk creator)
+exports.getParticipantsByEvent = async (req, res) => {
+    try {
+        const { eventId } = req.params;
+
+        console.log("=== GET PARTICIPANTS BY EVENT ===");
+        console.log("Event ID:", eventId);
+
+        const sql = `SELECT r.id as registration_id, r.event_id, r.user_id, r.name, r.nim, 
+                            r.fakultas, r.jurusan, r.email, r.phone, r.krs_uri, r.created_at,
+                            u.name as user_name
+                     FROM registrations r
+                     LEFT JOIN users u ON r.user_id = u.id
+                     WHERE r.event_id = ?
+                     ORDER BY r.created_at DESC`;
+
+        const [participants] = await db.query(sql, [eventId]);
+
+        console.log("Found participants:", participants.length);
+
+        res.status(200).json({ status: 'success', data: participants });
+    } catch (error) {
+        console.error("Error getting participants:", error);
         res.status(500).json({ status: 'fail', message: error.message });
     }
 };
