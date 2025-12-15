@@ -105,16 +105,31 @@ exports.registerEvent = async (req, res) => {
             });
         }
 
-        // Cek apakah user sudah terdaftar di event ini (berdasarkan user_id dan event_id)
-        const [existing] = await db.query(
-            'SELECT id FROM registrations WHERE event_id = ? AND (user_id = ? OR nim = ?)',
-            [event_id, user_id, nim]
+        // Cek apakah user sudah terdaftar di event ini (HANYA jika user_id ada/tidak null)
+        if (user_id) {
+            const [existingUser] = await db.query(
+                'SELECT id FROM registrations WHERE event_id = ? AND user_id = ?',
+                [event_id, user_id]
+            );
+
+            if (existingUser.length > 0) {
+                return res.status(409).json({
+                    status: 'fail',
+                    message: 'Anda sudah terdaftar di event ini'
+                });
+            }
+        }
+
+        // Cek apakah NIM sudah terdaftar di event ini (NIM harus unik per event)
+        const [existingNim] = await db.query(
+            'SELECT id FROM registrations WHERE event_id = ? AND nim = ?',
+            [event_id, nim]
         );
 
-        if (existing.length > 0) {
+        if (existingNim.length > 0) {
             return res.status(409).json({
                 status: 'fail',
-                message: 'Anda sudah terdaftar di event ini'
+                message: 'NIM sudah terdaftar di event ini. Setiap NIM hanya boleh mendaftar sekali per event.'
             });
         }
 
@@ -231,6 +246,50 @@ exports.cancelRegistration = async (req, res) => {
         res.status(200).json({ status: 'success', message: 'Pendaftaran berhasil dibatalkan' });
     } catch (error) {
         console.error("Error canceling registration:", error);
+        res.status(500).json({ status: 'fail', message: error.message });
+    }
+};
+
+// Fungsi untuk mengupdate pendaftaran
+exports.updateRegistration = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { user_id, name, nim, fakultas, jurusan, email, phone, krs_uri } = req.body;
+
+        console.log("=== UPDATE REGISTRATION DEBUG ===");
+        console.log("Registration ID:", id);
+        console.log("User ID:", user_id);
+
+        // Cek apakah pendaftaran ada
+        const [reg] = await db.query(
+            'SELECT user_id FROM registrations WHERE id = ?',
+            [id]
+        );
+
+        if (reg.length === 0) {
+            return res.status(404).json({ status: 'fail', message: 'Pendaftaran tidak ditemukan' });
+        }
+
+        // Validasi ownership jika user_id ada
+        if (user_id && reg[0].user_id && reg[0].user_id !== parseInt(user_id)) {
+            return res.status(403).json({ status: 'fail', message: 'Anda tidak memiliki izin untuk mengubah pendaftaran ini' });
+        }
+
+        const sql = `UPDATE registrations SET 
+                        name = COALESCE(?, name),
+                        nim = COALESCE(?, nim),
+                        fakultas = COALESCE(?, fakultas),
+                        jurusan = COALESCE(?, jurusan),
+                        email = COALESCE(?, email),
+                        phone = COALESCE(?, phone),
+                        krs_uri = ?
+                     WHERE id = ?`;
+
+        await db.query(sql, [name, nim, fakultas, jurusan, email, phone, krs_uri || null, id]);
+
+        res.status(200).json({ status: 'success', message: 'Pendaftaran berhasil diperbarui' });
+    } catch (error) {
+        console.error("Error updating registration:", error);
         res.status(500).json({ status: 'fail', message: error.message });
     }
 };
