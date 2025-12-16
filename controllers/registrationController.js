@@ -134,19 +134,19 @@ exports.registerEvent = async (req, res) => {
         }
 
         // Cek kuota event - VALIDASI BARU
-        const [eventData] = await db.query(
+        const [eventQuotaData] = await db.query(
             'SELECT quota FROM events WHERE id = ?',
             [event_id]
         );
 
-        if (eventData.length === 0) {
+        if (eventQuotaData.length === 0) {
             return res.status(404).json({
                 status: 'fail',
                 message: 'Event tidak ditemukan'
             });
         }
 
-        const eventQuota = eventData[0].quota;
+        const eventQuota = eventQuotaData[0].quota;
 
         // Jika quota > 0, cek apakah masih ada slot tersedia
         if (eventQuota > 0) {
