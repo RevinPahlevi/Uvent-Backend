@@ -22,6 +22,10 @@ router.delete('/:id', registrationController.cancelRegistration);
 // [PUT] /api/registrations/:id
 router.put('/:id', registrationController.updateRegistration);
 
+// Rute untuk mengecek apakah NIM sudah terdaftar di event
+// [GET] /api/registrations/check-nim/:eventId/:nim
+router.get('/check-nim/:eventId/:nim', registrationController.checkNimExists);
+
 // Rute untuk mendapatkan peserta per event (untuk creator)
 // [GET] /api/registrations/event/:eventId/participants
 router.get('/event/:eventId/participants', registrationController.getParticipantsByEvent);

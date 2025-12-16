@@ -58,6 +58,40 @@ exports.registerEvent = async (req, res) => {
             });
         }
 
+        // Cek kuota event - VALIDASI BARU
+        const [eventData] = await db.query(
+            'SELECT quota FROM events WHERE id = ?',
+            [event_id]
+        );
+
+        if (eventData.length === 0) {
+            return res.status(404).json({
+                status: 'fail',
+                message: 'Event tidak ditemukan'
+            });
+        }
+
+        const eventQuota = eventData[0].quota;
+
+        // Jika quota > 0, cek apakah masih ada slot tersedia
+        if (eventQuota > 0) {
+            const [registrationCount] = await db.query(
+                'SELECT COUNT(*) as total FROM registrations WHERE event_id = ?',
+                [event_id]
+            );
+
+            const currentCount = registrationCount[0].total;
+
+            console.log(`Quota check: ${currentCount}/${eventQuota} for event ${event_id}`);
+
+            if (currentCount >= eventQuota) {
+                return res.status(409).json({
+                    status: 'fail',
+                    message: 'Kuota event sudah penuh. Tidak dapat mendaftar.'
+                });
+            }
+        }
+
         // Insert ke database dengan user_id
         const sql = `INSERT INTO registrations 
                         (event_id, user_id, name, nim, fakultas, jurusan, email, phone, krs_uri)
@@ -204,6 +238,41 @@ exports.updateRegistration = async (req, res) => {
         res.status(200).json({ status: 'success', message: 'Pendaftaran berhasil diperbarui' });
     } catch (error) {
         console.error("Error updating registration:", error);
+        res.status(500).json({ status: 'fail', message: error.message });
+    }
+};
+
+// Fungsi untuk mengecek apakah NIM sudah terdaftar di event tertentu
+exports.checkNimExists = async (req, res) => {
+    try {
+        const { eventId, nim } = req.params;
+
+        console.log("=== CHECK NIM EXISTS ===");
+        console.log("Event ID:", eventId);
+        console.log("NIM:", nim);
+
+        if (!eventId || !nim) {
+            return res.status(400).json({
+                status: 'fail',
+                message: 'Event ID dan NIM diperlukan'
+            });
+        }
+
+        const [existingNim] = await db.query(
+            'SELECT id FROM registrations WHERE event_id = ? AND nim = ?',
+            [eventId, nim]
+        );
+
+        const exists = existingNim.length > 0;
+
+        res.status(200).json({
+            status: 'success',
+            data: {
+                exists: exists
+            }
+        });
+    } catch (error) {
+        console.error("Error checking NIM:", error);
         res.status(500).json({ status: 'fail', message: error.message });
     }
 };
