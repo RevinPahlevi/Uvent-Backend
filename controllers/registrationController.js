@@ -193,10 +193,9 @@ exports.getMyRegistrationsByUserId = async (req, res) => {
         console.log("=== GET MY REGISTRATIONS BY USER ID ===");
         console.log("userId:", userId);
 
-
         const sql = `SELECT r.id as registration_id, r.event_id, r.name, r.nim, r.fakultas, 
                             r.jurusan, r.email, r.phone, r.krs_uri, r.created_at,
-                            e.id, e.title, e.type, e.date, e.time_start, e.time_end, 
+                            e.title, e.type, e.date, e.time_start, e.time_end, 
                             e.platform_type, e.location_detail, e.quota, e.status,
                             e.thumbnail_uri, e.creator_id
                      FROM registrations r
@@ -206,25 +205,15 @@ exports.getMyRegistrationsByUserId = async (req, res) => {
 
         const [registrations] = await db.query(sql, [userId]);
 
-        // Transform ke format event (sama seperti getMyCreatedEvents)
-        const events = registrations.map(reg => ({
-            id: reg.id,
-            title: reg.title,
-            type: reg.type,
-            date: formatDateForResponse(reg.date),
-            time_start: reg.time_start,
-            time_end: reg.time_end,
-            platform_type: reg.platform_type,
-            location_detail: reg.location_detail,
-            quota: reg.quota,
-            status: reg.status,
-            thumbnail_uri: reg.thumbnail_uri,
-            creator_id: reg.creator_id
+        // Format tanggal
+        const processedRegistrations = registrations.map(reg => ({
+            ...reg,
+            date: formatDateForResponse(reg.date)
         }));
 
-        console.log("Found registrations:", events.length);
+        console.log("Found registrations:", processedRegistrations.length);
 
-        res.status(200).json({ status: 'success', data: events });
+        res.status(200).json({ status: 'success', data: processedRegistrations });
     } catch (error) {
         console.error("Error getting registrations by user:", error);
         res.status(500).json({ status: 'fail', message: error.message });
@@ -246,50 +235,6 @@ exports.cancelRegistration = async (req, res) => {
         res.status(200).json({ status: 'success', message: 'Pendaftaran berhasil dibatalkan' });
     } catch (error) {
         console.error("Error canceling registration:", error);
-        res.status(500).json({ status: 'fail', message: error.message });
-    }
-};
-
-// Fungsi untuk mengupdate pendaftaran
-exports.updateRegistration = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { user_id, name, nim, fakultas, jurusan, email, phone, krs_uri } = req.body;
-
-        console.log("=== UPDATE REGISTRATION DEBUG ===");
-        console.log("Registration ID:", id);
-        console.log("User ID:", user_id);
-
-        // Cek apakah pendaftaran ada
-        const [reg] = await db.query(
-            'SELECT user_id FROM registrations WHERE id = ?',
-            [id]
-        );
-
-        if (reg.length === 0) {
-            return res.status(404).json({ status: 'fail', message: 'Pendaftaran tidak ditemukan' });
-        }
-
-        // Validasi ownership jika user_id ada
-        if (user_id && reg[0].user_id && reg[0].user_id !== parseInt(user_id)) {
-            return res.status(403).json({ status: 'fail', message: 'Anda tidak memiliki izin untuk mengubah pendaftaran ini' });
-        }
-
-        const sql = `UPDATE registrations SET 
-                        name = COALESCE(?, name),
-                        nim = COALESCE(?, nim),
-                        fakultas = COALESCE(?, fakultas),
-                        jurusan = COALESCE(?, jurusan),
-                        email = COALESCE(?, email),
-                        phone = COALESCE(?, phone),
-                        krs_uri = ?
-                     WHERE id = ?`;
-
-        await db.query(sql, [name, nim, fakultas, jurusan, email, phone, krs_uri || null, id]);
-
-        res.status(200).json({ status: 'success', message: 'Pendaftaran berhasil diperbarui' });
-    } catch (error) {
-        console.error("Error updating registration:", error);
         res.status(500).json({ status: 'fail', message: error.message });
     }
 };
@@ -466,3 +411,112 @@ exports.getKRSFile = async (req, res) => {
 };
 
 // =============================================================
+
+// Get full registration data untuk edit form
+exports.getRegistrationDataByEventAndUser = async (req, res) => {
+    try {
+        const { eventId, userId } = req.params;
+        if (!eventId || !userId) {
+            return res.status(400).json({ status: "fail", message: "Event ID dan User ID diperlukan" });
+        }
+        console.log("=== GET REGISTRATION DATA FOR EDIT ===");
+        console.log("eventId:", eventId, "userId:", userId);
+        const sql = "SELECT r.id as registration_id, r.event_id, r.name, r.nim, r.fakultas, r.jurusan, r.email, r.phone, r.krs_uri, e.title as eventTitle, e.type as eventType FROM registrations r LEFT JOIN events e ON r.event_id = e.id WHERE r.event_id = ? AND r.user_id = ?";
+        const [result] = await db.query(sql, [eventId, userId]);
+        if (result.length === 0) {
+            return res.status(404).json({ status: "fail", message: "Data pendaftaran tidak ditemukan" });
+        }
+        console.log("Found registration data:", result[0]);
+        res.status(200).json({ status: "success", data: result[0] });
+    } catch (error) {
+        console.error("Error getting registration data:", error);
+        res.status(500).json({ status: "fail", message: error.message });
+    }
+};
+
+// Get registration ID by event and user
+exports.getRegistrationIdByEventAndUser = async (req, res) => {
+    try {
+        const { eventId, userId } = req.params;
+        if (!eventId || !userId) {
+            return res.status(400).json({ status: "fail", message: "Event ID dan User ID diperlukan" });
+        }
+        const sql = "SELECT id as registration_id FROM registrations WHERE event_id = ? AND user_id = ?";
+        const [result] = await db.query(sql, [eventId, userId]);
+        if (result.length === 0) {
+            return res.status(404).json({ status: "fail", message: "Pendaftaran tidak ditemukan" });
+        }
+        res.status(200).json({ status: "success", data: { registration_id: result[0].registration_id } });
+    } catch (error) {
+        console.error("Error getting registration ID:", error);
+        res.status(500).json({ status: "fail", message: error.message });
+    }
+};
+
+// Update registration data
+exports.updateRegistration = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, nim, fakultas, jurusan, email, phone, krs_uri } = req.body;
+
+        console.log("=== UPDATE REGISTRATION DEBUG ===");
+        console.log("  registration_id:", id);
+        console.log("  name:", name);
+        console.log("  nim:", nim);
+
+        if (!id) {
+            return res.status(400).json({
+                status: "fail",
+                message: "Registration ID diperlukan"
+            });
+        }
+
+        const [currentReg] = await db.query(
+            "SELECT event_id, user_id FROM registrations WHERE id = ?",
+            [id]
+        );
+
+        if (currentReg.length === 0) {
+            console.log("  ✗ Registration not found");
+            return res.status(404).json({
+                status: "fail",
+                message: "Data pendaftaran tidak ditemukan"
+            });
+        }
+
+        const eventId = currentReg[0].event_id;
+        console.log("  event_id:", eventId);
+
+        console.log("Checking if NIM already registered by other participant...");
+        const [existingNim] = await db.query(
+            "SELECT id FROM registrations WHERE nim = ? AND event_id = ? AND id != ?",
+            [nim, eventId, id]
+        );
+
+        console.log("  existingNim found:", existingNim.length);
+
+        if (existingNim.length > 0) {
+            console.log("  ✗ DUPLICATE NIM!");
+            return res.status(409).json({
+                status: "fail",
+                message: "NIM sudah terdaftar di event ini oleh peserta lain"
+            });
+        }
+
+        console.log("  ✓ NIM validation passed");
+
+        const sql = "UPDATE registrations SET name = ?, nim = ?, fakultas = ?, jurusan = ?, email = ?, phone = ?, krs_uri = ? WHERE id = ?";
+
+        await db.query(sql, [name, nim, fakultas, jurusan, email, phone, krs_uri, id]);
+
+        console.log("  ✓ Registration updated successfully");
+        res.status(200).json({
+            status: "success",
+            message: "Data pendaftaran berhasil diperbarui"
+        });
+    } catch (error) {
+        console.error("=== ERROR UPDATE REGISTRATION ===");
+        console.error(error);
+        res.status(500).json({ status: "fail", message: error.message });
+    }
+};
