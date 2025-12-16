@@ -14,6 +14,14 @@ router.get('/my/:nim', registrationController.getMyRegistrations);
 // [GET] /api/registrations/user/:userId
 router.get('/user/:userId', registrationController.getMyRegistrationsByUserId);
 
+// Rute untuk mendapatkan full registration data untuk edit
+// [GET] /api/registrations/event/:eventId/user/:userId
+router.get('/event/:eventId/user/:userId', registrationController.getRegistrationDataByEventAndUser);
+
+// Rute untuk mendapatkan registration ID berdasarkan eventId dan userId  
+// [GET] /api/registrations/event/:eventId/user/:userId/id
+router.get('/event/:eventId/user/:userId/id', registrationController.getRegistrationIdByEventAndUser);
+
 // ===== FITUR BARU: Upload KRS dan Lihat Peserta =====
 
 // Rute untuk upload file KRS (untuk peserta)
@@ -37,5 +45,10 @@ router.delete('/:id', registrationController.cancelRegistration);
 // Rute untuk mengupdate pendaftaran
 // [PUT] /api/registrations/:id
 router.put('/:id', registrationController.updateRegistration);
+
+// Rute untuk check NIM availability saat edit
+// [GET] /api/registrations/check-nim
+const nimCheckController = require('../controllers/nimCheckController');
+router.get('/check-nim', nimCheckController.checkNimForEdit);
 
 module.exports = router;
