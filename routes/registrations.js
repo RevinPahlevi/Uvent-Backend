@@ -46,9 +46,15 @@ router.delete('/:id', registrationController.cancelRegistration);
 // [PUT] /api/registrations/:id
 router.put('/:id', registrationController.updateRegistration);
 
-// Rute untuk check NIM availability saat edit
+
+// Rute untuk check NIM availability saat edit (dari loly)
 // [GET] /api/registrations/check-nim
 const nimCheckController = require('../controllers/nimCheckController');
 router.get('/check-nim', nimCheckController.checkNimForEdit);
+
+// Rute untuk mengecek apakah NIM sudah terdaftar di event (dari main)
+// [GET] /api/registrations/check-nim/:eventId/:nim
+router.get('/check-nim/:eventId/:nim', registrationController.checkNimExists);
+
 
 module.exports = router;

@@ -44,6 +44,19 @@ exports.createFeedback = async (req, res) => {
             });
         }
 
+        // Cek apakah user adalah creator event (creator tidak boleh memberi feedback)
+        const [eventData] = await db.query(
+            'SELECT creator_id FROM events WHERE id = ?',
+            [event_id]
+        );
+
+        if (eventData.length > 0 && eventData[0].creator_id === parseInt(user_id)) {
+            return res.status(403).json({
+                status: 'fail',
+                message: 'Pembuat event tidak dapat memberikan ulasan untuk event sendiri'
+            });
+        }
+
         // Insert ke database
         const sql = `INSERT INTO feedbacks 
                         (event_id, user_id, rating, review, photo_uri)
@@ -94,10 +107,13 @@ exports.getFeedbackByEvent = async (req, res) => {
 // Fungsi untuk menghapus feedback
 exports.deleteFeedback = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { user_id } = req.body;
+        const { id, userId } = req.params;
 
-        // Cek apakah feedback milik user yang sama
+        console.log("=== DELETE FEEDBACK DEBUG ===");
+        console.log("Feedback ID:", id);
+        console.log("User ID:", userId);
+
+        // Cek apakah feedback ada dan milik user yang sama
         const [feedback] = await db.query(
             'SELECT user_id FROM feedbacks WHERE id = ?',
             [id]
@@ -107,7 +123,7 @@ exports.deleteFeedback = async (req, res) => {
             return res.status(404).json({ status: 'fail', message: 'Feedback tidak ditemukan' });
         }
 
-        if (feedback[0].user_id !== parseInt(user_id)) {
+        if (feedback[0].user_id !== parseInt(userId)) {
             return res.status(403).json({ status: 'fail', message: 'Anda tidak memiliki izin untuk menghapus ulasan ini' });
         }
 
