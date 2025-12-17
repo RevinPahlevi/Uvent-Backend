@@ -176,6 +176,52 @@ exports.registerEvent = async (req, res) => {
             event_id, user_id || null, name, nim, fakultas, jurusan, email, phone, krs_uri || null
         ]);
 
+        // ============= NOTIFICATION LOGIC (NEW FEATURE) =============
+        // Buat notifikasi untuk pembuat event setelah registrasi sukses
+        try {
+            // Ambil detail event DAN creator_id untuk notifikasi
+            const [eventDetails] = await db.query(
+                'SELECT title, creator_id FROM events WHERE id = ?',
+                [event_id]
+            );
+
+            // Only create notification jika event dan creator ditemukan
+            if (eventDetails.length > 0 && eventDetails[0].creator_id) {
+                const eventTitle = eventDetails[0].title;
+                const creatorId = eventDetails[0].creator_id;
+
+                // Defensive check: Jangan kirim notifikasi ke diri sendiri
+                // (Seharusnya impossible karena UI sudah prevent, tapi tetap di-check untuk safety)
+                const isSelfRegistration = user_id && user_id === creatorId;
+
+                if (!isSelfRegistration) {
+                    // Buat pesan notifikasi dengan format yang ditentukan
+                    const notifMessage = `${name} telah mendaftar pada event "${eventTitle}".`;
+
+                    // Insert notifikasi ke database
+                    await db.query(
+                        `INSERT INTO notifications (user_id, title, message, type, related_id, created_at)
+                         VALUES (?, ?, ?, ?, ?, NOW())`,
+                        [creatorId, 'Pendaftaran Event 🎉', notifMessage, 'registration', event_id]
+                    );
+
+                    console.log(`✓ Notification created for creator ${creatorId}: "${notifMessage}"`);
+                } else {
+                    // Log jika terjadi self-registration (defensive check)
+                    console.log('⊘ Skipped notification: self-registration detected (defensive check)');
+                }
+            } else {
+                // Event tidak punya creator atau tidak ditemukan
+                console.log('⊘ Skipped notification: event or creator not found');
+            }
+        } catch (notifError) {
+            // CRITICAL: Jangan crash aplikasi jika notifikasi gagal
+            // Registrasi tetap sukses, hanya notifikasi yang di-skip
+            console.error('⚠ Failed to create notification (non-critical):', notifError.message);
+            // Continue execution - registrasi tetap valid
+        }
+        // ============= END NOTIFICATION LOGIC =============
+
         res.status(201).json({
             status: 'success',
             message: 'Berhasil mendaftar ke event',
