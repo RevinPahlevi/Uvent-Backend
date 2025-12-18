@@ -5,6 +5,9 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const allRoutes = require('./routes/index');
 
+// Initialize Firebase Admin SDK for Push Notifications
+require('./config/firebase');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
