@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uvent API Tester</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-left: 4px solid #4CAF50;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover { background: #45a049; }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            background: #e8f5e9;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+        }
+        input, select {
+            padding: 8px;
+            margin: 5px;
+            width: 200px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Uvent Notification API Tester</h1>
+        
+        <!-- Test 1: Save FCM Token -->
+        <div class="test-section">
+            <h2>Test 1: Save FCM Token</h2>
+            <input type="number" id="userId1" placeholder="User ID" value="1">
+            <input type="text" id="fcmToken" placeholder="FCM Token" value="test-token-123">
+            <br>
+            <button onclick="testSaveFCMToken()">Send Request</button>
+            <div id="result1" class="result" style="display:none"></div>
+        </div>
+
+        <!-- Test 2: Get Notifications -->
+        <div class="test-section">
+            <h2>Test 2: Get User Notifications</h2>
+            <input type="number" id="userId2" placeholder="User ID" value="1">
+            <br>
+            <button onclick="testGetNotifications()">Get Notifications</button>
+            <div id="result2" class="result" style="display:none"></div>
+        </div>
+
+        <!-- Test 3: Mark as Read -->
+        <div class="test-section">
+            <h2>Test 3: Mark Notification as Read</h2>
+            <input type="number" id="notifId" placeholder="Notification ID" value="1">
+            <br>
+            <button onclick="testMarkAsRead()">Mark as Read</button>
+            <div id="result3" class="result" style="display:none"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api/notifications';
+
+        function showResult(elementId, data, isError = false) {
+            const resultDiv = document.getElementById(elementId);
+            resultDiv.style.display = 'block';
+            resultDiv.className = isError ? 'result error' : 'result';
+            resultDiv.textContent = JSON.stringify(data, null, 2);
+        }
+
+        async function testSaveFCMToken() {
+            const userId = document.getElementById('userId1').value;
+            const fcmToken = document.getElementById('fcmToken').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/fcm-token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: parseInt(userId),
+                        fcm_token: fcmToken,
+                        device_type: 'android'
+                    })
+                });
+                const data = await response.json();
+                showResult('result1', data, !response.ok);
+            } catch (error) {
+                showResult('result1', { error: error.message }, true);
+            }
+        }
+
+        async function testGetNotifications() {
+            const userId = document.getElementById('userId2').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/user/${userId}`);
+                const data = await response.json();
+                showResult('result2', data, !response.ok);
+            } catch (error) {
+                showResult('result2', { error: error.message }, true);
+            }
+        }
+
+        async function testMarkAsRead() {
+            const notifId = document.getElementById('notifId').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/${notifId}/read`, {
+                    method: 'PUT'
+                });
+                const data = await response.json();
+                showResult('result3', data, !response.ok);
+            } catch (error) {
+                showResult('result3', { error: error.message }, true);
+            }
+        }
+    </script>
+</body>
+</html>
