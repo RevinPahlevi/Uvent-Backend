@@ -28,8 +28,14 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Rute Utama API (untuk mobile dan admin)
 app.use('/api', allRoutes);
 
+// Initialize scheduler for automated tasks (feedback reminders, etc.)
+const { initScheduler } = require('./services/scheduler');
+
 // Jalankan Server
 app.listen(PORT, () => {
     console.log(`Server Uvent berjalan di http://localhost:${PORT}`);
     console.log(`Admin Panel: http://localhost:${PORT}/api/admin`);
+
+    // Start scheduler after server is running
+    initScheduler();
 });

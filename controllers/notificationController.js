@@ -3,6 +3,7 @@
 // Created: 2025-12-17
 
 const db = require('../config/db');
+const notificationService = require('../services/notificationService');
 
 /**
  * POST /api/notifications/fcm-token
@@ -197,6 +198,113 @@ exports.deleteNotification = async (req, res) => {
         res.status(500).json({
             status: 'fail',
             message: 'Gagal menghapus notifikasi',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * POST /api/notifications/send-feedback-reminders
+ * Check for ended events and send feedback reminder notifications to participants
+ * 
+ * Logic:
+ * 1. Query events where (date + time_end) < NOW()
+ * 2. For each ended event, find participants who haven't received feedback notification
+ * 3. Send notification: "Event '{title}' telah selesai! Berikan feedbackmu 📝"
+ * 4. Mark participants as notified to avoid spam
+ */
+exports.sendFeedbackReminders = async (req, res) => {
+    try {
+        console.log("=== SEND FEEDBACK REMINDERS ===");
+
+        // 1. Query events yang sudah selesai (date + time_end < NOW)
+        // Events yang tanggalnya sudah lewat atau tanggal hari ini dengan waktu sudah lewat
+        const [endedEvents] = await db.query(`
+            SELECT e.id, e.title, e.date, e.time_end
+            FROM events e
+            WHERE 
+                (e.date < CURDATE()) 
+                OR (e.date = CURDATE() AND e.time_end <= CURTIME())
+        `);
+
+        console.log(`Found ${endedEvents.length} ended events`);
+
+        let totalSent = 0;
+        let totalFailed = 0;
+
+        for (const event of endedEvents) {
+            console.log(`Processing event: ${event.id} - ${event.title}`);
+
+            // 2. Get participants who registered for this event
+            // AND haven't received feedback reminder notification yet
+            // AND haven't given feedback yet
+            const [participants] = await db.query(`
+                SELECT r.user_id, u.name as user_name
+                FROM registrations r
+                JOIN users u ON r.user_id = u.id
+                WHERE r.event_id = ?
+                AND r.user_id IS NOT NULL
+                AND r.user_id NOT IN (
+                    -- Exclude users who already received feedback_reminder for this event
+                    SELECT n.user_id FROM notifications n 
+                    WHERE n.type = 'feedback_reminder' 
+                    AND n.related_id = ?
+                )
+                AND r.user_id NOT IN (
+                    -- Exclude users who already gave feedback for this event
+                    SELECT f.user_id FROM feedbacks f 
+                    WHERE f.event_id = ?
+                )
+            `, [event.id, event.id, event.id]);
+
+            console.log(`  → ${participants.length} participants need notification`);
+
+            // 3. Send notification to each participant
+            for (const participant of participants) {
+                try {
+                    const result = await notificationService.sendDualNotification(
+                        participant.user_id,
+                        'Event Selesai! 🎉',
+                        `Event "${event.title}" telah selesai! Berikan feedbackmu 📝`,
+                        'feedback_reminder',
+                        event.id,
+                        {
+                            event_title: event.title,
+                            action: 'add_feedback'
+                        }
+                    );
+
+                    if (result.inApp || result.push) {
+                        totalSent++;
+                        console.log(`    ✓ Sent to user ${participant.user_id} (${participant.user_name})`);
+                    } else {
+                        totalFailed++;
+                        console.log(`    ✗ Failed for user ${participant.user_id}`);
+                    }
+                } catch (notifError) {
+                    totalFailed++;
+                    console.error(`    ✗ Error for user ${participant.user_id}:`, notifError.message);
+                }
+            }
+        }
+
+        console.log(`=== COMPLETED: ${totalSent} sent, ${totalFailed} failed ===`);
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Feedback reminders processed',
+            data: {
+                events_processed: endedEvents.length,
+                notifications_sent: totalSent,
+                notifications_failed: totalFailed
+            }
+        });
+
+    } catch (error) {
+        console.error('Error sending feedback reminders:', error);
+        res.status(500).json({
+            status: 'fail',
+            message: 'Gagal mengirim feedback reminders',
             error: error.message
         });
     }

@@ -33,4 +33,10 @@ router.put('/user/:userId/read-all', notificationController.markAllAsRead);
 // DELETE /api/notifications/:id
 router.delete('/:id', notificationController.deleteNotification);
 
+// ===== FEEDBACK REMINDER =====
+
+// Send feedback reminders to participants of ended events
+// POST /api/notifications/send-feedback-reminders
+router.post('/send-feedback-reminders', notificationController.sendFeedbackReminders);
+
 module.exports = router;
