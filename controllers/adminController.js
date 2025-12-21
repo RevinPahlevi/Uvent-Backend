@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const notificationService = require('../services/notificationService');
 
 // Hardcoded admin credentials
 const ADMIN_USERNAME = 'admin';
@@ -143,12 +144,62 @@ exports.approveEvent = async (req, res) => {
     try {
         const { id } = req.params;
 
+        // First, get event details before updating
+        const [eventData] = await db.query('SELECT title, type FROM events WHERE id = ?', [id]);
+
+        if (eventData.length === 0) {
+            return res.status(404).json({ status: 'fail', message: 'Event tidak ditemukan' });
+        }
+
+        const event = eventData[0];
+
+        // Update event status to 'disetujui'
         const sql = "UPDATE events SET status = 'disetujui' WHERE id = ?";
         const [result] = await db.query(sql, [id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ status: 'fail', message: 'Event tidak ditemukan' });
         }
+
+        console.log(`✅ Event ${id} approved: ${event.title}`);
+
+        // ============= BROADCAST NOTIFICATION TO ALL USERS =============
+        // Send notification asynchronously (non-blocking)
+        setImmediate(async () => {
+            try {
+                console.log(`📢 Broadcasting event approval notification for: ${event.title}`);
+
+                // Get all user IDs from database
+                const [users] = await db.query('SELECT id FROM users');
+                const userIds = users.map(user => user.id);
+
+                console.log(`Found ${userIds.length} users to notify`);
+
+                if (userIds.length > 0) {
+                    // Send bulk notification
+                    const notifResult = await notificationService.sendDualNotificationBulk(
+                        userIds,
+                        'Event Baru Tersedia! 🎉',
+                        `Event "${event.title}" telah disetujui dan siap untuk pendaftaran.`,
+                        'event_approved',
+                        id,
+                        {
+                            event_title: event.title,
+                            event_type: event.type,
+                            action: 'view_event_detail'
+                        }
+                    );
+
+                    console.log(`✓ Broadcast complete: ${notifResult.success} sent, ${notifResult.failed} failed`);
+                } else {
+                    console.log("⊘ No users found to notify");
+                }
+
+            } catch (notifError) {
+                // Notification failure should NOT crash the approval
+                console.error("⚠️ Broadcast notification failed (event still approved):", notifError.message);
+            }
+        });
 
         res.status(200).json({ status: 'success', message: 'Event berhasil disetujui' });
     } catch (error) {
