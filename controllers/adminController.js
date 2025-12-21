@@ -180,7 +180,7 @@ exports.approveEvent = async (req, res) => {
                     const notifResult = await notificationService.sendDualNotificationBulk(
                         userIds,
                         'Event Baru Tersedia! 🎉',
-                        `Event "${event.title}" telah disetujui dan siap untuk pendaftaran.`,
+                        `Event ${event.title} telah dibuat dan siap untuk pendaftaran.`,
                         'event_approved',
                         id,
                         {
