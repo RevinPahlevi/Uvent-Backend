@@ -1,28 +1,6 @@
-# Gradle
-.gradle/
-build/
-*/build/
-local.properties
-
-# Android Studio
-.idea/
-*.iml
-.DS_Store
-captures/
-.externalNativeBuild/
-.cxx/
-.caches/
-*.apk
-*.ap_
-*.dex
-*.class
+node_modules/ 
+.env 
+uploads/
 *.log
-*.zip
-
-# Keystore & signing
-*.jks
-*.keystore
-
-# Misc
-/.tmp
-*.orig
+.DS_Store
+config/serviceAccountKey.json

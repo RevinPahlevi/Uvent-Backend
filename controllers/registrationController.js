@@ -1,4 +1,7 @@
 const db = require('../config/db');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 // Fungsi untuk format tanggal dari MySQL Date object
 function formatDateForResponse(dateValue) {
@@ -11,6 +14,52 @@ function formatDateForResponse(dateValue) {
     }
     return dateValue;
 }
+
+// ===== KONFIGURASI MULTER UNTUK KRS =====
+// Pastikan folder uploads/krs ada
+const krsUploadDir = path.join(__dirname, '../uploads/krs');
+if (!fs.existsSync(krsUploadDir)) {
+    fs.mkdirSync(krsUploadDir, { recursive: true });
+    console.log('Created KRS upload directory:', krsUploadDir);
+}
+
+// Storage configuration untuk KRS
+const krsStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, krsUploadDir);
+    },
+    filename: (req, file, cb) => {
+        // Format: krs_timestamp_nim.pdf
+        const timestamp = Date.now();
+        const nim = req.body.nim || 'unknown';
+        const filename = `krs_${timestamp}_${nim}.pdf`;
+        cb(null, filename);
+    }
+});
+
+// Filter hanya PDF
+const krsFileFilter = (req, file, cb) => {
+    console.log('KRS File filter - checking:', file.originalname, 'mimetype:', file.mimetype);
+
+    const allowedMimeTypes = ['application/pdf'];
+    const ext = path.extname(file.originalname).toLowerCase();
+
+    if (allowedMimeTypes.includes(file.mimetype) || ext === '.pdf') {
+        cb(null, true);
+    } else {
+        cb(new Error('Hanya file PDF yang diizinkan untuk KRS'), false);
+    }
+};
+
+// Multer upload configuration untuk KRS
+const uploadKRSMiddleware = multer({
+    storage: krsStorage,
+    fileFilter: krsFileFilter,
+    limits: {
+        fileSize: 5 * 1024 * 1024 // Max 5MB
+    }
+}).single('krs'); // field name: 'krs'
+// ==========================================
 
 // Fungsi untuk mendaftar ke event
 exports.registerEvent = async (req, res) => {
@@ -30,17 +79,92 @@ exports.registerEvent = async (req, res) => {
             });
         }
 
-        // Cek apakah user sudah terdaftar di event ini (berdasarkan user_id dan event_id)
-        const [existing] = await db.query(
-            'SELECT id FROM registrations WHERE event_id = ? AND (user_id = ? OR nim = ?)',
-            [event_id, user_id, nim]
+        // VALIDASI BACKEND: Cek apakah event sudah dimulai
+        const [eventData] = await db.query(
+            'SELECT date, time_start, time_end FROM events WHERE id = ?',
+            [event_id]
         );
 
-        if (existing.length > 0) {
+        if (eventData.length === 0) {
+            return res.status(404).json({
+                status: 'fail',
+                message: 'Event tidak ditemukan'
+            });
+        }
+
+        const event = eventData[0];
+
+        // Gabungkan tanggal dan waktu
+        const eventStartDateTime = new Date(`${event.date} ${event.time_start}`);
+        const now = new Date();
+
+        if (eventStartDateTime < now) {
+            return res.status(400).json({
+                status: 'fail',
+                message: 'Event sudah dimulai, pendaftaran ditutup'
+            });
+        }
+
+        // Cek apakah user sudah terdaftar di event ini (HANYA jika user_id ada/tidak null)
+        if (user_id) {
+            const [existingUser] = await db.query(
+                'SELECT id FROM registrations WHERE event_id = ? AND user_id = ?',
+                [event_id, user_id]
+            );
+
+            if (existingUser.length > 0) {
+                return res.status(409).json({
+                    status: 'fail',
+                    message: 'Anda sudah terdaftar di event ini'
+                });
+            }
+        }
+
+        // Cek apakah NIM sudah terdaftar di event ini (NIM harus unik per event)
+        const [existingNim] = await db.query(
+            'SELECT id FROM registrations WHERE event_id = ? AND nim = ?',
+            [event_id, nim]
+        );
+
+        if (existingNim.length > 0) {
             return res.status(409).json({
                 status: 'fail',
-                message: 'Anda sudah terdaftar di event ini'
+                message: 'NIM sudah terdaftar di event ini. Setiap NIM hanya boleh mendaftar sekali per event.'
             });
+        }
+
+        // Cek kuota event - VALIDASI BARU
+        const [eventQuotaData] = await db.query(
+            'SELECT quota FROM events WHERE id = ?',
+            [event_id]
+        );
+
+        if (eventQuotaData.length === 0) {
+            return res.status(404).json({
+                status: 'fail',
+                message: 'Event tidak ditemukan'
+            });
+        }
+
+        const eventQuota = eventQuotaData[0].quota;
+
+        // Jika quota > 0, cek apakah masih ada slot tersedia
+        if (eventQuota > 0) {
+            const [registrationCount] = await db.query(
+                'SELECT COUNT(*) as total FROM registrations WHERE event_id = ?',
+                [event_id]
+            );
+
+            const currentCount = registrationCount[0].total;
+
+            console.log(`Quota check: ${currentCount}/${eventQuota} for event ${event_id}`);
+
+            if (currentCount >= eventQuota) {
+                return res.status(409).json({
+                    status: 'fail',
+                    message: 'Kuota event sudah penuh. Tidak dapat mendaftar.'
+                });
+            }
         }
 
         // Insert ke database dengan user_id
@@ -51,6 +175,65 @@ exports.registerEvent = async (req, res) => {
         const [result] = await db.query(sql, [
             event_id, user_id || null, name, nim, fakultas, jurusan, email, phone, krs_uri || null
         ]);
+
+        // ============= NOTIFICATION LOGIC (NEW FEATURE) =============
+        // Buat notifikasi untuk pembuat event setelah registrasi sukses
+        try {
+            // Ambil detail event DAN creator_id untuk notifikasi
+            const [eventDetails] = await db.query(
+                'SELECT title, creator_id FROM events WHERE id = ?',
+                [event_id]
+            );
+
+            // Only create notification jika event dan creator ditemukan
+            if (eventDetails.length > 0 && eventDetails[0].creator_id) {
+                const eventTitle = eventDetails[0].title;
+                const creatorId = eventDetails[0].creator_id;
+
+                // Defensive check: Jangan kirim notifikasi ke diri sendiri
+                // (Seharusnya impossible karena UI sudah prevent, tapi tetap di-check untuk safety)
+                const isSelfRegistration = user_id && user_id === creatorId;
+
+                if (!isSelfRegistration) {
+                    // UPGRADED: Use dual notification service (Push + In-App)
+                    const notificationService = require('../services/notificationService');
+
+                    const title = 'Pendaftaran Event 🎉';
+                    const body = `${name} telah mendaftar pada event "${eventTitle}".`;
+
+                    // SEND DUAL NOTIFICATION (Push + In-App)
+                    const notifResult = await notificationService.sendDualNotification(
+                        creatorId,
+                        title,
+                        body,
+                        'registration',
+                        event_id,
+                        {
+                            event_title: eventTitle,
+                            participant_name: name,
+                            event_id: event_id
+                        }
+                    );
+
+                    console.log(`Dual notification sent: In-App=${notifResult.inApp}, Push=${notifResult.push}`);
+                    if (notifResult.errors.length > 0) {
+                        console.warn('Notification warnings:', notifResult.errors.join(', '));
+                    }
+                } else {
+                    // Log jika terjadi self-registration (defensive check)
+                    console.log('⊘ Skipped notification: self-registration detected (defensive check)');
+                }
+            } else {
+                // Event tidak punya creator atau tidak ditemukan
+                console.log('⊘ Skipped notification: event or creator not found');
+            }
+        } catch (notifError) {
+            // CRITICAL: Jangan crash aplikasi jika notifikasi gagal
+            // Registrasi tetap sukses, hanya notifikasi yang di-skip
+            console.error('⚠ Failed to create notification (non-critical):', notifError.message);
+            // Continue execution - registrasi tetap valid
+        }
+        // ============= END NOTIFICATION LOGIC =============
 
         res.status(201).json({
             status: 'success',
@@ -149,46 +332,320 @@ exports.cancelRegistration = async (req, res) => {
     }
 };
 
-// Fungsi untuk mengupdate pendaftaran
-exports.updateRegistration = async (req, res) => {
+// ===== FITUR BARU: Upload KRS, Lihat Peserta, Download KRS =====
+
+// Fungsi untuk upload file KRS
+exports.uploadKRS = (req, res) => {
+    console.log('=== UPLOAD KRS REQUEST RECEIVED ===');
+
+    uploadKRSMiddleware(req, res, (err) => {
+        if (err) {
+            console.error('Multer error:', err.message);
+
+            if (err instanceof multer.MulterError) {
+                if (err.code === 'LIMIT_FILE_SIZE') {
+                    return res.status(400).json({
+                        status: 'fail',
+                        message: 'Ukuran file terlalu besar. Maksimum 5MB'
+                    });
+                }
+                return res.status(400).json({
+                    status: 'fail',
+                    message: `Error upload: ${err.message}`
+                });
+            }
+
+            return res.status(500).json({
+                status: 'fail',
+                message: err.message || 'Error saat upload file KRS'
+            });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({
+                status: 'fail',
+                message: 'Tidak ada file yang diupload. Field name harus "krs"'
+            });
+        }
+
+        // Buat URL untuk mengakses KRS
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const krsUrl = `${baseUrl}/uploads/krs/${req.file.filename}`;
+
+        console.log('=== KRS FILE UPLOADED SUCCESSFULLY ===');
+        console.log('Filename:', req.file.filename);
+        console.log('Size:', req.file.size);
+        console.log('KRS URL:', krsUrl);
+
+        res.status(200).json({
+            status: 'success',
+            message: 'File KRS berhasil diupload',
+            data: {
+                filename: req.file.filename,
+                url: krsUrl,
+                size: req.file.size
+            }
+        });
+    });
+};
+
+
+// Fungsi untuk mengecek apakah NIM sudah terdaftar di event tertentu (dari main)
+exports.checkNimExists = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { user_id, name, nim, fakultas, jurusan, email, phone, krs_uri } = req.body;
+        const { eventId, nim } = req.params;
 
-        console.log("=== UPDATE REGISTRATION DEBUG ===");
-        console.log("Registration ID:", id);
-        console.log("User ID:", user_id);
+        console.log("=== CHECK NIM EXISTS ===");
+        console.log("Event ID:", eventId);
+        console.log("NIM:", nim);
 
-        // Cek apakah pendaftaran ada
-        const [reg] = await db.query(
-            'SELECT user_id FROM registrations WHERE id = ?',
+        if (!eventId || !nim) {
+            return res.status(400).json({
+                status: 'fail',
+                message: 'Event ID dan NIM diperlukan'
+            });
+        }
+
+        const [existingNim] = await db.query(
+            'SELECT id FROM registrations WHERE event_id = ? AND nim = ?',
+            [eventId, nim]
+        );
+
+        const exists = existingNim.length > 0;
+
+        res.status(200).json({
+            status: 'success',
+            data: {
+                exists: exists
+            }
+        });
+    } catch (error) {
+        console.error("Error checking NIM:", error);
+        res.status(500).json({ status: 'fail', message: error.message });
+    }
+};
+
+// Fungsi untuk mendapatkan peserta yang terdaftar di suatu event (untuk creator)
+exports.getParticipantsByEvent = async (req, res) => {
+    try {
+        const { eventId } = req.params;
+
+        console.log('=== GET PARTICIPANTS BY EVENT ===');
+        console.log('Event ID:', eventId);
+
+        if (!eventId) {
+            return res.status(400).json({
+                status: 'fail',
+                message: 'Event ID diperlukan'
+            });
+        }
+
+        // Query untuk mendapatkan semua peserta event
+        const sql = `SELECT 
+                        r.id as registration_id,
+                        r.event_id,
+                        r.user_id,
+                        r.name,
+                        r.nim,
+                        r.fakultas,
+                        r.jurusan,
+                        r.email,
+                        r.phone,
+                        r.krs_uri,
+                        r.created_at,
+                        u.name as user_name
+                     FROM registrations r
+                     LEFT JOIN users u ON r.user_id = u.id
+                     WHERE r.event_id = ?
+                     ORDER BY r.created_at DESC`;
+
+        const [participants] = await db.query(sql, [eventId]);
+
+        console.log(`Found ${participants.length} participants`);
+
+        res.status(200).json({
+            status: 'success',
+            data: participants
+        });
+
+    } catch (error) {
+        console.error('Error getting participants:', error);
+        res.status(500).json({
+            status: 'fail',
+            message: error.message
+        });
+    }
+};
+
+// Fungsi untuk download/view file KRS
+exports.getKRSFile = async (req, res) => {
+    try {
+        const { id } = req.params; // registration ID
+
+        console.log('=== GET KRS FILE ===');
+        console.log('Registration ID:', id);
+
+        // Get KRS URI from database
+        const [registration] = await db.query(
+            'SELECT krs_uri, name, nim FROM registrations WHERE id = ?',
             [id]
         );
 
-        if (reg.length === 0) {
-            return res.status(404).json({ status: 'fail', message: 'Pendaftaran tidak ditemukan' });
+        if (registration.length === 0) {
+            return res.status(404).json({
+                status: 'fail',
+                message: 'Pendaftaran tidak ditemukan'
+            });
         }
 
-        // Validasi ownership jika user_id ada
-        if (user_id && reg[0].user_id && reg[0].user_id !== parseInt(user_id)) {
-            return res.status(403).json({ status: 'fail', message: 'Anda tidak memiliki izin untuk mengubah pendaftaran ini' });
+        const krsUri = registration[0].krs_uri;
+
+        if (!krsUri) {
+            return res.status(404).json({
+                status: 'fail',
+                message: 'File KRS tidak tersedia'
+            });
         }
 
-        const sql = `UPDATE registrations SET 
-                        name = COALESCE(?, name),
-                        nim = COALESCE(?, nim),
-                        fakultas = COALESCE(?, fakultas),
-                        jurusan = COALESCE(?, jurusan),
-                        email = COALESCE(?, email),
-                        phone = COALESCE(?, phone),
-                        krs_uri = ?
-                     WHERE id = ?`;
+        // Extract filename from URL (ambil bagian setelah /uploads/krs/)
+        const filename = krsUri.split('/').pop();
+        const filePath = path.join(krsUploadDir, filename);
 
-        await db.query(sql, [name, nim, fakultas, jurusan, email, phone, krs_uri || null, id]);
+        console.log('File path:', filePath);
 
-        res.status(200).json({ status: 'success', message: 'Pendaftaran berhasil diperbarui' });
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({
+                status: 'fail',
+                message: 'File KRS tidak ditemukan di server'
+            });
+        }
+
+        // Serve the file
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.pipe(res);
+
+        console.log('KRS file sent successfully');
+
     } catch (error) {
-        console.error("Error updating registration:", error);
-        res.status(500).json({ status: 'fail', message: error.message });
+        console.error('Error getting KRS file:', error);
+        res.status(500).json({
+            status: 'fail',
+            message: error.message
+        });
+    }
+};
+
+// =============================================================
+
+// Get full registration data untuk edit form
+exports.getRegistrationDataByEventAndUser = async (req, res) => {
+    try {
+        const { eventId, userId } = req.params;
+        if (!eventId || !userId) {
+            return res.status(400).json({ status: "fail", message: "Event ID dan User ID diperlukan" });
+        }
+        console.log("=== GET REGISTRATION DATA FOR EDIT ===");
+        console.log("eventId:", eventId, "userId:", userId);
+        const sql = "SELECT r.id as registration_id, r.event_id, r.name, r.nim, r.fakultas, r.jurusan, r.email, r.phone, r.krs_uri, e.title as eventTitle, e.type as eventType FROM registrations r LEFT JOIN events e ON r.event_id = e.id WHERE r.event_id = ? AND r.user_id = ?";
+        const [result] = await db.query(sql, [eventId, userId]);
+        if (result.length === 0) {
+            return res.status(404).json({ status: "fail", message: "Data pendaftaran tidak ditemukan" });
+        }
+        console.log("Found registration data:", result[0]);
+        res.status(200).json({ status: "success", data: result[0] });
+    } catch (error) {
+        console.error("Error getting registration data:", error);
+        res.status(500).json({ status: "fail", message: error.message });
+    }
+};
+
+// Get registration ID by event and user
+exports.getRegistrationIdByEventAndUser = async (req, res) => {
+    try {
+        const { eventId, userId } = req.params;
+        if (!eventId || !userId) {
+            return res.status(400).json({ status: "fail", message: "Event ID dan User ID diperlukan" });
+        }
+        const sql = "SELECT id as registration_id FROM registrations WHERE event_id = ? AND user_id = ?";
+        const [result] = await db.query(sql, [eventId, userId]);
+        if (result.length === 0) {
+            return res.status(404).json({ status: "fail", message: "Pendaftaran tidak ditemukan" });
+        }
+        res.status(200).json({ status: "success", data: { registration_id: result[0].registration_id } });
+    } catch (error) {
+        console.error("Error getting registration ID:", error);
+        res.status(500).json({ status: "fail", message: error.message });
+    }
+};
+
+// Update registration data
+exports.updateRegistration = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, nim, fakultas, jurusan, email, phone, krs_uri } = req.body;
+
+        console.log("=== UPDATE REGISTRATION DEBUG ===");
+        console.log("  registration_id:", id);
+        console.log("  name:", name);
+        console.log("  nim:", nim);
+
+        if (!id) {
+            return res.status(400).json({
+                status: "fail",
+                message: "Registration ID diperlukan"
+            });
+        }
+
+        const [currentReg] = await db.query(
+            "SELECT event_id, user_id FROM registrations WHERE id = ?",
+            [id]
+        );
+
+        if (currentReg.length === 0) {
+            console.log("  ✗ Registration not found");
+            return res.status(404).json({
+                status: "fail",
+                message: "Data pendaftaran tidak ditemukan"
+            });
+        }
+
+        const eventId = currentReg[0].event_id;
+        console.log("  event_id:", eventId);
+
+        console.log("Checking if NIM already registered by other participant...");
+        const [existingNim] = await db.query(
+            "SELECT id FROM registrations WHERE nim = ? AND event_id = ? AND id != ?",
+            [nim, eventId, id]
+        );
+
+        console.log("  existingNim found:", existingNim.length);
+
+        if (existingNim.length > 0) {
+            console.log("  ✗ DUPLICATE NIM!");
+            return res.status(409).json({
+                status: "fail",
+                message: "NIM sudah terdaftar di event ini oleh peserta lain"
+            });
+        }
+
+        console.log("  ✓ NIM validation passed");
+
+        const sql = "UPDATE registrations SET name = ?, nim = ?, fakultas = ?, jurusan = ?, email = ?, phone = ?, krs_uri = ? WHERE id = ?";
+
+        await db.query(sql, [name, nim, fakultas, jurusan, email, phone, krs_uri, id]);
+
+        console.log("  ✓ Registration updated successfully");
+        res.status(200).json({
+            status: "success",
+            message: "Data pendaftaran berhasil diperbarui"
+        });
+    } catch (error) {
+        console.error("=== ERROR UPDATE REGISTRATION ===");
+        console.error(error);
+        res.status(500).json({ status: "fail", message: error.message });
     }
 };

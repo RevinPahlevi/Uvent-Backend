@@ -14,8 +14,4 @@ router.get('/event/:eventId', documentationController.getDocumentationByEvent);
 // [DELETE] /api/documentations/:id
 router.delete('/:id', documentationController.deleteDocumentation);
 
-// Rute untuk mengupdate dokumentasi
-// [PUT] /api/documentations/:id
-router.put('/:id', documentationController.updateDocumentation);
-
 module.exports = router;

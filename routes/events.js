@@ -16,7 +16,4 @@ router.get('/my-events/:userId', eventController.getMyCreatedEvents);
 // [PUT] /api/events/:id (Update Event)
 router.put('/:id', eventController.updateEvent);
 
-// [DELETE] /api/events/:id (Delete Event)
-router.delete('/:id', eventController.deleteEvent);
-
 module.exports = router;
