@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const notificationService = require('../services/notificationService');
 
 // Fungsi untuk konversi format tanggal dari DD/MM/YYYY menjadi YYYY-MM-DD (format MySQL)
 function reformatDate(dateStr) {
@@ -106,13 +107,53 @@ exports.createEvent = async (req, res) => {
             creatorIdInt
         });
 
-        await db.query(sql, [
+        const [result] = await db.query(sql, [
             title, type, formattedDate, timeStart, timeEnd,
             platformType, locationDetail, quotaInt, thumbnailUriValue,
             creatorIdInt
         ]);
 
-        console.log("✅ Event created successfully");
+        const eventId = result.insertId;
+        console.log(`✅ Event created successfully with ID: ${eventId}`);
+
+        // ============= BROADCAST NOTIFICATION TO ALL USERS =============
+        // Send notification asynchronously (non-blocking)
+        setImmediate(async () => {
+            try {
+                console.log("📢 Broadcasting event creation notification to all users...");
+
+                // Get all user IDs from database
+                const [users] = await db.query('SELECT id FROM users');
+                const userIds = users.map(user => user.id);
+
+                console.log(`Found ${userIds.length} users to notify`);
+
+                if (userIds.length > 0) {
+                    // Send bulk notification
+                    const notifResult = await notificationService.sendDualNotificationBulk(
+                        userIds,
+                        'Event Baru Tersedia! 🎉',
+                        `Event "${title}" telah dibuat dan menunggu persetujuan admin.`,
+                        'event_created',
+                        eventId,
+                        {
+                            event_title: title,
+                            event_type: type,
+                            action: 'view_event_detail'
+                        }
+                    );
+
+                    console.log(`✓ Broadcast complete: ${notifResult.success} sent, ${notifResult.failed} failed`);
+                } else {
+                    console.log("⊘ No users found to notify");
+                }
+
+            } catch (notifError) {
+                // Notification failure should NOT crash the app
+                console.error("⚠️ Broadcast notification failed (event still created):", notifError.message);
+            }
+        });
+
         res.status(201).json({ status: 'success', message: 'Event berhasil dibuat' });
 
     } catch (error) {
