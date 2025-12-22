@@ -222,25 +222,18 @@ exports.updateEvent = async (req, res) => {
 exports.deleteEvent = async (req, res) => {
     try {
         const { id } = req.params;
-        const { creator_id } = req.body;
 
         console.log("=== DELETE EVENT DEBUG ===");
         console.log("Event ID:", id);
-        console.log("Creator ID:", creator_id);
 
-        // Cek apakah event ada dan milik creator yang sama
+        // Cek apakah event ada
         const [event] = await db.query(
-            'SELECT creator_id FROM events WHERE id = ?',
+            'SELECT id FROM events WHERE id = ?',
             [id]
         );
 
         if (event.length === 0) {
             return res.status(404).json({ status: 'fail', message: 'Event tidak ditemukan' });
-        }
-
-        // Validasi ownership (optional - bisa dinonaktifkan jika tidak diperlukan)
-        if (creator_id && event[0].creator_id !== parseInt(creator_id)) {
-            return res.status(403).json({ status: 'fail', message: 'Anda tidak memiliki izin untuk menghapus event ini' });
         }
 
         // Hapus registrations terkait terlebih dahulu
@@ -256,6 +249,7 @@ exports.deleteEvent = async (req, res) => {
         const sql = 'DELETE FROM events WHERE id = ?';
         await db.query(sql, [id]);
 
+        console.log(`✅ Event ${id} deleted successfully`);
         res.status(200).json({ status: 'success', message: 'Event berhasil dihapus' });
 
     } catch (error) {
