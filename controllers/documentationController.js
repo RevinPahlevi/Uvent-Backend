@@ -67,20 +67,15 @@ exports.getDocumentationByEvent = async (req, res) => {
 exports.deleteDocumentation = async (req, res) => {
     try {
         const { id } = req.params;
-        const { user_id } = req.body;
 
-        // Cek apakah dokumentasi milik user yang sama
+        // Cek apakah dokumentasi ada
         const [doc] = await db.query(
-            'SELECT user_id FROM documentations WHERE id = ?',
+            'SELECT id FROM documentations WHERE id = ?',
             [id]
         );
 
         if (doc.length === 0) {
             return res.status(404).json({ status: 'fail', message: 'Dokumentasi tidak ditemukan' });
-        }
-
-        if (doc[0].user_id !== parseInt(user_id)) {
-            return res.status(403).json({ status: 'fail', message: 'Anda tidak memiliki izin untuk menghapus dokumentasi ini' });
         }
 
         const sql = 'DELETE FROM documentations WHERE id = ?';
@@ -89,6 +84,40 @@ exports.deleteDocumentation = async (req, res) => {
         res.status(200).json({ status: 'success', message: 'Dokumentasi berhasil dihapus' });
     } catch (error) {
         console.error("Error deleting documentation:", error);
+        res.status(500).json({ status: 'fail', message: error.message });
+    }
+};
+
+// Fungsi untuk mengupdate dokumentasi (hanya description)
+exports.updateDocumentation = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { description } = req.body;
+
+        console.log("=== UPDATE DOCUMENTATION DEBUG ===");
+        console.log("Doc ID:", id);
+        console.log("New description:", description);
+
+        // Cek apakah dokumentasi ada
+        const [doc] = await db.query(
+            'SELECT id FROM documentations WHERE id = ?',
+            [id]
+        );
+
+        if (doc.length === 0) {
+            return res.status(404).json({ status: 'fail', message: 'Dokumentasi tidak ditemukan' });
+        }
+
+        // Update hanya description (foto tidak boleh diubah)
+        const sql = 'UPDATE documentations SET description = ? WHERE id = ?';
+        await db.query(sql, [description, id]);
+
+        res.status(200).json({ 
+            status: 'success', 
+            message: 'Dokumentasi berhasil diperbarui' 
+        });
+    } catch (error) {
+        console.error("Error updating documentation:", error);
         res.status(500).json({ status: 'fail', message: error.message });
     }
 };
