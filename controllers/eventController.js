@@ -192,6 +192,22 @@ exports.updateEvent = async (req, res) => {
         const formattedDate = reformatDate(date);
         const quotaInt = parseInt(quota, 10) || 0;
 
+        // Validate end time is after start time
+        if (timeStart && timeEnd) {
+            const [startHour, startMin] = timeStart.split(':').map(Number);
+            const [endHour, endMin] = timeEnd.split(':').map(Number);
+
+            const startMinutes = startHour * 60 + startMin;
+            const endMinutes = endHour * 60 + endMin;
+
+            if (endMinutes <= startMinutes) {
+                return res.status(400).json({
+                    status: 'fail',
+                    message: 'Waktu selesai harus lebih lama dari waktu mulai'
+                });
+            }
+        }
+
         const sql = `UPDATE events SET 
                         title = ?, 
                         type = ?, 
@@ -220,40 +236,132 @@ exports.updateEvent = async (req, res) => {
 
 // --- FUNGSI DELETE EVENT ---
 exports.deleteEvent = async (req, res) => {
+    const connection = await db.getConnection();
+
     try {
         const { id } = req.params;
 
         console.log("=== DELETE EVENT DEBUG ===");
         console.log("Event ID:", id);
 
+        // Mulai transaction
+        await connection.beginTransaction();
+
         // Cek apakah event ada
-        const [event] = await db.query(
-            'SELECT id FROM events WHERE id = ?',
+        const [event] = await connection.query(
+            'SELECT id, title FROM events WHERE id = ?',
             [id]
         );
 
         if (event.length === 0) {
-            return res.status(404).json({ status: 'fail', message: 'Event tidak ditemukan' });
+            await connection.rollback();
+            return res.status(404).json({
+                status: 'fail',
+                message: 'Event tidak ditemukan'
+            });
         }
 
-        // Hapus registrations terkait terlebih dahulu
-        await db.query('DELETE FROM registrations WHERE event_id = ?', [id]);
+        console.log(`📋 Deleting event: ${event[0].title} (ID: ${id})`);
 
-        // Hapus feedbacks terkait
-        await db.query('DELETE FROM feedbacks WHERE event_id = ?', [id]);
+        // Hapus semua data terkait event dengan nama kolom yang benar
+        let deletedCount = {
+            notifications: 0,
+            registrations: 0,
+            feedback: 0,
+            documentations: 0
+        };
 
-        // Hapus documentations terkait
-        await db.query('DELETE FROM documentations WHERE event_id = ?', [id]);
+        // 1. Hapus notifications terkait event
+        // Di tabel notifications, kolom yang merujuk ke event adalah 'related_id'
+        try {
+            const [notifResult] = await connection.query(
+                'DELETE FROM notifications WHERE related_id = ?',
+                [id]
+            );
+            deletedCount.notifications = notifResult.affectedRows;
+            console.log(`🔔 Deleted ${notifResult.affectedRows} notifications`);
+        } catch (err) {
+            console.log(`⚠️ Error deleting notifications: ${err.message}`);
+        }
 
-        // Hapus event
-        const sql = 'DELETE FROM events WHERE id = ?';
-        await db.query(sql, [id]);
+        // 2. Hapus registrations terkait
+        try {
+            const [regResult] = await connection.query(
+                'DELETE FROM registrations WHERE event_id = ?',
+                [id]
+            );
+            deletedCount.registrations = regResult.affectedRows;
+            console.log(`📝 Deleted ${regResult.affectedRows} registrations`);
+        } catch (err) {
+            console.log(`⚠️ Error deleting registrations: ${err.message}`);
+        }
+
+        // 3. Hapus feedback terkait
+        try {
+            const [feedbackResult] = await connection.query(
+                'DELETE FROM feedback WHERE event_id = ?',
+                [id]
+            );
+            deletedCount.feedback = feedbackResult.affectedRows;
+            console.log(`💬 Deleted ${feedbackResult.affectedRows} feedback`);
+        } catch (err) {
+            console.log(`⚠️ Error deleting feedback: ${err.message}`);
+        }
+
+        // 4. Hapus documentations terkait
+        try {
+            const [docResult] = await connection.query(
+                'DELETE FROM documentations WHERE event_id = ?',
+                [id]
+            );
+            deletedCount.documentations = docResult.affectedRows;
+            console.log(`📄 Deleted ${docResult.affectedRows} documentations`);
+        } catch (err) {
+            console.log(`⚠️ Error deleting documentations: ${err.message}`);
+        }
+
+        // 5. Hapus event itu sendiri
+        const [eventResult] = await connection.query(
+            'DELETE FROM events WHERE id = ?',
+            [id]
+        );
+        console.log(`🗑️ Deleted event (affected rows: ${eventResult.affectedRows})`);
+
+        // Commit transaction jika semua berhasil
+        await connection.commit();
 
         console.log(`✅ Event ${id} deleted successfully`);
-        res.status(200).json({ status: 'success', message: 'Event berhasil dihapus' });
+        console.log(`📊 Summary: ${deletedCount.notifications} notifications, ${deletedCount.registrations} registrations, ${deletedCount.feedback} feedback, ${deletedCount.documentations} documentations`);
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Event berhasil dihapus'
+        });
 
     } catch (error) {
-        console.error("Error deleting event:", error);
-        res.status(500).json({ status: 'fail', message: error.message });
+        // Rollback jika terjadi error
+        await connection.rollback();
+
+        console.error("❌ Error deleting event:", error);
+        console.error("Error code:", error.code);
+        console.error("Error message:", error.message);
+        console.error("Error stack:", error.stack);
+
+        // Berikan pesan error yang lebih detail
+        let errorMessage = 'Gagal menghapus event';
+        if (error.code === 'ER_ROW_IS_REFERENCED_2') {
+            errorMessage = 'Event tidak dapat dihapus karena masih memiliki data terkait';
+        } else if (error.message) {
+            errorMessage = `Gagal menghapus event: ${error.message}`;
+        }
+
+        res.status(500).json({
+            status: 'fail',
+            message: errorMessage,
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    } finally {
+        // Pastikan connection dikembalikan ke pool
+        connection.release();
     }
 };

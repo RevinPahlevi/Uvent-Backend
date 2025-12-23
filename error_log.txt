@@ -1,0 +1,91 @@
+﻿Γ£ô Firebase Admin SDK initialized successfully
+Upload directory: C:\Users\LENOVO\OneDrive - Universitas Andalas\SMT 5\PTB\PTB BISMILLAH\Uvent-Backend-main\uploads
+Uploads directory already exists
+node : 
+node:events:486
+At line:1 char:1
++ node server.js 
+2>&1 | Out-File 
+-FilePath 
+error_log.txt 
+-Encoding utf8
++ ~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (node:ev   
+ ents:486:String)    
+ [], RemoteExcep    
+tion
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+      throw er; // 
+Unhandled 'error' 
+event
+      ^
+
+Error: listen 
+EADDRINUSE: address 
+already in use 
+:::3000
+    at Server.setupLi
+stenHandle [as 
+_listen2] 
+(node:net:1940:16)
+    at 
+listenInCluster 
+(node:net:1997:12)
+    at Server.listen 
+(node:net:2102:7)
+    at app.listen (C:
+\Users\LENOVO\OneDriv
+e - Universitas 
+Andalas\SMT 
+5\PTB\PTB BISMILLAH\U
+vent-Backend-main\nod
+e_modules\express\lib
+\application.js:635:2
+4)
+    at 
+Object.<anonymous> (C
+:\Users\LENOVO\OneDri
+ve - Universitas 
+Andalas\SMT 
+5\PTB\PTB BISMILLAH\U
+vent-Backend-main\ser
+ver.js:35:5)
+    at 
+Module._compile (node
+:internal/modules/cjs
+/loader:1760:14)
+    at Object..js (no
+de:internal/modules/c
+js/loader:1892:10)
+    at Module.load (n
+ode:internal/modules/
+cjs/loader:1480:32)
+    at Module._load (
+node:internal/modules
+/cjs/loader:1299:12)
+    at TracingChannel
+.traceSync (node:diag
+nostics_channel:328:1
+4)
+Emitted 'error' 
+event on Server 
+instance at:
+    at emitErrorNT 
+(node:net:1976:8)
+    at process.proces
+sTicksAndRejections (
+node:internal/process
+/task_queues:89:21) {
+  code: 'EADDRINUSE',
+  errno: -4091,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+Node.js v25.2.1
