@@ -136,3 +136,71 @@ exports.deleteFeedback = async (req, res) => {
         res.status(500).json({ status: 'fail', message: error.message });
     }
 };
+
+// Fungsi untuk mengupdate feedback
+exports.updateFeedback = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { user_id, rating, review, photo_uri } = req.body;
+
+        console.log("=== UPDATE FEEDBACK DEBUG ===");
+        console.log("Feedback ID:", id);
+        console.log("User ID:", user_id);
+        console.log("Rating:", rating);
+        console.log("Review:", review);
+        console.log("Photo URI:", photo_uri);
+
+        // Validasi input
+        if (!user_id || !rating) {
+            return res.status(400).json({
+                status: 'fail',
+                message: 'user_id dan rating wajib diisi'
+            });
+        }
+
+        // Validasi rating (1-5)
+        if (rating < 1 || rating > 5) {
+            return res.status(400).json({
+                status: 'fail',
+                message: 'Rating harus antara 1-5'
+            });
+        }
+
+        // Cek apakah feedback ada
+        const [feedback] = await db.query(
+            'SELECT user_id FROM feedbacks WHERE id = ?',
+            [id]
+        );
+
+        if (feedback.length === 0) {
+            return res.status(404).json({
+                status: 'fail',
+                message: 'Feedback tidak ditemukan'
+            });
+        }
+
+        // Cek apakah user adalah pemilik feedback
+        if (feedback[0].user_id !== parseInt(user_id)) {
+            return res.status(403).json({
+                status: 'fail',
+                message: 'Anda tidak memiliki izin untuk mengedit ulasan ini'
+            });
+        }
+
+        // Update feedback
+        const sql = `UPDATE feedbacks 
+                     SET rating = ?, review = ?, photo_uri = ?
+                     WHERE id = ?`;
+
+        await db.query(sql, [rating, review || null, photo_uri || null, id]);
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Ulasan berhasil diperbarui'
+        });
+
+    } catch (error) {
+        console.error("Error updating feedback:", error);
+        res.status(500).json({ status: 'fail', message: error.message });
+    }
+};
