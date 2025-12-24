@@ -32,6 +32,10 @@ router.post('/upload-krs', registrationController.uploadKRS);
 // [GET] /api/registrations/event/:eventId/participants
 router.get('/event/:eventId/participants', registrationController.getParticipantsByEvent);
 
+// Rute untuk mendapatkan jumlah pendaftar per event (untuk validasi kuota)
+// [GET] /api/registrations/event/:eventId/count
+router.get('/event/:eventId/count', registrationController.getRegistrationCount);
+
 // Rute untuk download/view file KRS peserta
 // [GET] /api/registrations/:id/krs
 router.get('/:id/krs', registrationController.getKRSFile);

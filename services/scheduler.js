@@ -22,25 +22,32 @@ function initScheduler() {
     // ===== DOCUMENTATION REMINDER (EVENT START) =====
     scheduleEventStartNotifications();
 
-    // Backup check every 5 minutes for any missed events
-    cron.schedule('*/5 * * * *', async () => {
-        console.log('\n[SCHEDULER] Backup check for missed events...');
+    // PRECISION CHECK: Re-schedule every 30 seconds for near-instant notifications
+    // This ensures any new events or schedule changes are picked up quickly
+    cron.schedule('*/30 * * * * *', async () => {
+        await scheduleNextEventNotification();
+        await scheduleEventStartNotifications();
+    });
+
+    // Backup check every 10 seconds for any missed events (near-instant)
+    cron.schedule('*/10 * * * * *', async () => {
         await sendFeedbackReminders();
         await sendDocumentationReminders();
     });
 
-    // Run immediately on startup
+    // Run immediately on startup (reduced delay from 5s to 1s)
     setTimeout(async () => {
         console.log('\n[SCHEDULER] Initial check on startup...');
         await sendFeedbackReminders();
         await sendDocumentationReminders();
         await scheduleNextEventNotification();
         await scheduleEventStartNotifications();
-    }, 5000);
+    }, 1000);
 }
 
 /**
  * Schedule notification for the next event that will end
+ * AND immediately send notifications for events that have ALREADY ENDED
  * This provides INSTANT notifications - NO DELAY
  */
 async function scheduleNextEventNotification() {
@@ -49,13 +56,35 @@ async function scheduleNextEventNotification() {
         scheduledEndTimeouts.forEach(timeout => clearTimeout(timeout));
         scheduledEndTimeouts = [];
 
-        // Find ALL events ending in the next 24 hours
+        // ===== IMMEDIATE: Send notifications for events that have ALREADY ENDED =====
+        const [alreadyEndedEvents] = await db.query(`
+            SELECT e.id, e.title, e.date, e.time_end
+            FROM events e
+            WHERE 
+                e.status = 'disetujui'
+                AND (
+                    (e.date < CURDATE()) 
+                    OR (e.date = CURDATE() AND e.time_end <= CURTIME())
+                )
+        `);
+
+        if (alreadyEndedEvents.length > 0) {
+            console.log(`[SCHEDULER] ⏰ Found ${alreadyEndedEvents.length} events ALREADY ENDED - sending feedback notifications IMMEDIATELY!`);
+
+            for (const event of alreadyEndedEvents) {
+                console.log(`[SCHEDULER] ⏰ Event "${event.title}" has already ended - sending feedback reminders NOW!`);
+                await sendNotificationsForEvent(event.id, event.title);
+            }
+        }
+
+        // ===== SCHEDULED: Find ALL events ending in the next 24 hours =====
         const [upcomingEvents] = await db.query(`
             SELECT e.id, e.title, e.date, e.time_end,
                    TIMESTAMPDIFF(SECOND, NOW(), TIMESTAMP(e.date, e.time_end)) as seconds_until_end
             FROM events e
             WHERE 
-                TIMESTAMP(e.date, e.time_end) > NOW()
+                e.status = 'disetujui'
+                AND TIMESTAMP(e.date, e.time_end) > NOW()
                 AND TIMESTAMP(e.date, e.time_end) <= DATE_ADD(NOW(), INTERVAL 24 HOUR)
             ORDER BY TIMESTAMP(e.date, e.time_end) ASC
             LIMIT 50
@@ -154,8 +183,11 @@ async function sendFeedbackReminders() {
             SELECT e.id, e.title, e.date, e.time_end
             FROM events e
             WHERE 
-                (e.date < CURDATE()) 
-                OR (e.date = CURDATE() AND e.time_end <= CURTIME())
+                e.status = 'disetujui'
+                AND (
+                    (e.date < CURDATE()) 
+                    OR (e.date = CURDATE() AND e.time_end <= CURTIME())
+                )
         `);
 
         if (endedEvents.length === 0) {
@@ -214,6 +246,7 @@ async function sendFeedbackReminders() {
 
 /**
  * Schedule notifications for events that are about to START
+ * AND immediately send notifications for events that have ALREADY STARTED
  */
 async function scheduleEventStartNotifications() {
     try {
@@ -221,13 +254,34 @@ async function scheduleEventStartNotifications() {
         scheduledStartTimeouts.forEach(timeout => clearTimeout(timeout));
         scheduledStartTimeouts = [];
 
-        // Find events starting in the next 24 hours
+        // ===== IMMEDIATE: Send notifications for events that have ALREADY STARTED =====
+        // These are events currently running (started but not ended) that haven't received doc notifications
+        const [alreadyStartedEvents] = await db.query(`
+            SELECT e.id, e.title, e.date, e.time_start, e.time_end
+            FROM events e
+            WHERE 
+                e.status = 'disetujui'
+                AND (e.date < CURDATE() OR (e.date = CURDATE() AND e.time_start <= CURTIME()))
+                AND (e.date > CURDATE() OR (e.date = CURDATE() AND e.time_end > CURTIME()))
+        `);
+
+        if (alreadyStartedEvents.length > 0) {
+            console.log(`[SCHEDULER] 📸 Found ${alreadyStartedEvents.length} events ALREADY RUNNING - sending documentation reminders IMMEDIATELY!`);
+
+            for (const event of alreadyStartedEvents) {
+                console.log(`[SCHEDULER] 📸 Event "${event.title}" is currently running - sending doc reminders NOW!`);
+                await sendDocumentationNotificationsForEvent(event.id, event.title);
+            }
+        }
+
+        // ===== SCHEDULED: Find events starting in the next 24 hours =====
         const [upcomingEvents] = await db.query(`
             SELECT e.id, e.title, e.date, e.time_start,
                    TIMESTAMPDIFF(SECOND, NOW(), TIMESTAMP(e.date, e.time_start)) as seconds_until_start
             FROM events e
             WHERE 
-                TIMESTAMP(e.date, e.time_start) > NOW()
+                e.status = 'disetujui'
+                AND TIMESTAMP(e.date, e.time_start) > NOW()
                 AND TIMESTAMP(e.date, e.time_start) <= DATE_ADD(NOW(), INTERVAL 24 HOUR)
             ORDER BY TIMESTAMP(e.date, e.time_start) ASC
             LIMIT 50
@@ -321,7 +375,8 @@ async function sendDocumentationReminders() {
             SELECT e.id, e.title, e.date, e.time_start, e.time_end
             FROM events e
             WHERE 
-                (e.date < CURDATE() OR (e.date = CURDATE() AND e.time_start <= CURTIME()))
+                e.status = 'disetujui'
+                AND (e.date < CURDATE() OR (e.date = CURDATE() AND e.time_start <= CURTIME()))
                 AND (e.date > CURDATE() OR (e.date = CURDATE() AND e.time_end > CURTIME()))
         `);
 

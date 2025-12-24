@@ -477,6 +477,45 @@ exports.getParticipantsByEvent = async (req, res) => {
     }
 };
 
+// Fungsi untuk mendapatkan jumlah pendaftar per event (untuk validasi kuota)
+exports.getRegistrationCount = async (req, res) => {
+    try {
+        const { eventId } = req.params;
+
+        console.log('=== GET REGISTRATION COUNT ===');
+        console.log('Event ID:', eventId);
+
+        if (!eventId) {
+            return res.status(400).json({
+                status: 'fail',
+                message: 'Event ID diperlukan'
+            });
+        }
+
+        // Count registrations for this event
+        const [result] = await db.query(
+            'SELECT COUNT(*) as count FROM registrations WHERE event_id = ?',
+            [eventId]
+        );
+
+        const count = result[0].count;
+
+        console.log(`Registration count for event ${eventId}: ${count}`);
+
+        res.status(200).json({
+            status: 'success',
+            count: count
+        });
+
+    } catch (error) {
+        console.error('Error getting registration count:', error);
+        res.status(500).json({
+            status: 'fail',
+            message: error.message
+        });
+    }
+};
+
 // Fungsi untuk download/view file KRS
 exports.getKRSFile = async (req, res) => {
     try {
