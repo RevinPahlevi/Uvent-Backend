@@ -1,6 +1,5 @@
 const db = require('../config/db');
 
-// Check NIM availability for edit (exclude current registration)
 exports.checkNimForEdit = async (req, res) => {
     try {
         const { eventId, nim, registrationId } = req.query;
@@ -17,7 +16,6 @@ exports.checkNimForEdit = async (req, res) => {
             });
         }
 
-        // Check if NIM exists for this event (excluding current registration)
         const [existing] = await db.query(
             'SELECT id FROM registrations WHERE event_id = ? AND nim = ? AND id != ?',
             [eventId, nim, registrationId]

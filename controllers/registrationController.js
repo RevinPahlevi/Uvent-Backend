@@ -3,7 +3,6 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Fungsi untuk format tanggal dari MySQL Date object
 function formatDateForResponse(dateValue) {
     if (!dateValue) return null;
     if (dateValue instanceof Date) {
@@ -15,21 +14,17 @@ function formatDateForResponse(dateValue) {
     return dateValue;
 }
 
-// ===== KONFIGURASI MULTER UNTUK KRS =====
-// Pastikan folder uploads/krs ada
 const krsUploadDir = path.join(__dirname, '../uploads/krs');
 if (!fs.existsSync(krsUploadDir)) {
     fs.mkdirSync(krsUploadDir, { recursive: true });
     console.log('Created KRS upload directory:', krsUploadDir);
 }
 
-// Storage configuration untuk KRS
 const krsStorage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, krsUploadDir);
     },
     filename: (req, file, cb) => {
-        // Format: krs_timestamp_nim.pdf
         const timestamp = Date.now();
         const nim = req.body.nim || 'unknown';
         const filename = `krs_${timestamp}_${nim}.pdf`;
@@ -37,7 +32,6 @@ const krsStorage = multer.diskStorage({
     }
 });
 
-// Filter hanya PDF
 const krsFileFilter = (req, file, cb) => {
     console.log('KRS File filter - checking:', file.originalname, 'mimetype:', file.mimetype);
 
@@ -51,17 +45,14 @@ const krsFileFilter = (req, file, cb) => {
     }
 };
 
-// Multer upload configuration untuk KRS
 const uploadKRSMiddleware = multer({
     storage: krsStorage,
     fileFilter: krsFileFilter,
     limits: {
-        fileSize: 5 * 1024 * 1024 // Max 5MB
+        fileSize: 5 * 1024 * 1024
     }
-}).single('krs'); // field name: 'krs'
-// ==========================================
+}).single('krs');
 
-// Fungsi untuk mendaftar ke event
 exports.registerEvent = async (req, res) => {
     try {
         const { event_id, user_id, name, nim, fakultas, jurusan, email, phone, krs_uri } = req.body;
@@ -71,7 +62,6 @@ exports.registerEvent = async (req, res) => {
         console.log("user_id:", user_id);
         console.log("name:", name);
 
-        // Validasi input
         if (!event_id || !name || !nim || !fakultas || !jurusan || !email || !phone) {
             return res.status(400).json({
                 status: 'fail',
@@ -79,7 +69,6 @@ exports.registerEvent = async (req, res) => {
             });
         }
 
-        // VALIDASI BACKEND: Cek apakah event sudah dimulai
         const [eventData] = await db.query(
             'SELECT date, time_start, time_end FROM events WHERE id = ?',
             [event_id]
@@ -94,7 +83,6 @@ exports.registerEvent = async (req, res) => {
 
         const event = eventData[0];
 
-        // Gabungkan tanggal dan waktu
         const eventStartDateTime = new Date(`${event.date} ${event.time_start}`);
         const now = new Date();
 
@@ -105,7 +93,6 @@ exports.registerEvent = async (req, res) => {
             });
         }
 
-        // Cek apakah user sudah terdaftar di event ini (HANYA jika user_id ada/tidak null)
         if (user_id) {
             const [existingUser] = await db.query(
                 'SELECT id FROM registrations WHERE event_id = ? AND user_id = ?',
@@ -120,7 +107,6 @@ exports.registerEvent = async (req, res) => {
             }
         }
 
-        // Cek apakah NIM sudah terdaftar di event ini (NIM harus unik per event)
         const [existingNim] = await db.query(
             'SELECT id FROM registrations WHERE event_id = ? AND nim = ?',
             [event_id, nim]
@@ -133,7 +119,6 @@ exports.registerEvent = async (req, res) => {
             });
         }
 
-        // Cek kuota event - VALIDASI BARU
         const [eventQuotaData] = await db.query(
             'SELECT quota FROM events WHERE id = ?',
             [event_id]
@@ -148,7 +133,6 @@ exports.registerEvent = async (req, res) => {
 
         const eventQuota = eventQuotaData[0].quota;
 
-        // Jika quota > 0, cek apakah masih ada slot tersedia
         if (eventQuota > 0) {
             const [registrationCount] = await db.query(
                 'SELECT COUNT(*) as total FROM registrations WHERE event_id = ?',
@@ -167,7 +151,6 @@ exports.registerEvent = async (req, res) => {
             }
         }
 
-        // Insert ke database dengan user_id
         const sql = `INSERT INTO registrations 
                         (event_id, user_id, name, nim, fakultas, jurusan, email, phone, krs_uri)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
@@ -176,32 +159,24 @@ exports.registerEvent = async (req, res) => {
             event_id, user_id || null, name, nim, fakultas, jurusan, email, phone, krs_uri || null
         ]);
 
-        // ============= NOTIFICATION LOGIC (NEW FEATURE) =============
-        // Buat notifikasi untuk pembuat event setelah registrasi sukses
         try {
-            // Ambil detail event DAN creator_id untuk notifikasi
             const [eventDetails] = await db.query(
                 'SELECT title, creator_id FROM events WHERE id = ?',
                 [event_id]
             );
 
-            // Only create notification jika event dan creator ditemukan
             if (eventDetails.length > 0 && eventDetails[0].creator_id) {
                 const eventTitle = eventDetails[0].title;
                 const creatorId = eventDetails[0].creator_id;
 
-                // Defensive check: Jangan kirim notifikasi ke diri sendiri
-                // (Seharusnya impossible karena UI sudah prevent, tapi tetap di-check untuk safety)
                 const isSelfRegistration = user_id && user_id === creatorId;
 
                 if (!isSelfRegistration) {
-                    // UPGRADED: Use dual notification service (Push + In-App)
                     const notificationService = require('../services/notificationService');
 
                     const title = 'Pendaftaran Event 🎉';
                     const body = `${name} telah mendaftar pada event "${eventTitle}".`;
 
-                    // SEND DUAL NOTIFICATION (Push + In-App)
                     const notifResult = await notificationService.sendDualNotification(
                         creatorId,
                         title,
@@ -220,20 +195,14 @@ exports.registerEvent = async (req, res) => {
                         console.warn('Notification warnings:', notifResult.errors.join(', '));
                     }
                 } else {
-                    // Log jika terjadi self-registration (defensive check)
                     console.log('⊘ Skipped notification: self-registration detected (defensive check)');
                 }
             } else {
-                // Event tidak punya creator atau tidak ditemukan
                 console.log('⊘ Skipped notification: event or creator not found');
             }
         } catch (notifError) {
-            // CRITICAL: Jangan crash aplikasi jika notifikasi gagal
-            // Registrasi tetap sukses, hanya notifikasi yang di-skip
             console.error('⚠ Failed to create notification (non-critical):', notifError.message);
-            // Continue execution - registrasi tetap valid
         }
-        // ============= END NOTIFICATION LOGIC =============
 
         res.status(201).json({
             status: 'success',
@@ -249,7 +218,6 @@ exports.registerEvent = async (req, res) => {
     }
 };
 
-// Fungsi untuk mengambil daftar pendaftaran user berdasarkan NIM
 exports.getMyRegistrations = async (req, res) => {
     try {
         const { nim } = req.params;
@@ -274,7 +242,6 @@ exports.getMyRegistrations = async (req, res) => {
     }
 };
 
-// --- FUNGSI BARU: Mengambil event yang diikuti berdasarkan user_id ---
 exports.getMyRegistrationsByUserId = async (req, res) => {
     try {
         const { userId } = req.params;
@@ -298,7 +265,6 @@ exports.getMyRegistrationsByUserId = async (req, res) => {
 
         const [registrations] = await db.query(sql, [userId]);
 
-        // Format tanggal
         const processedRegistrations = registrations.map(reg => ({
             ...reg,
             date: formatDateForResponse(reg.date)
@@ -313,7 +279,6 @@ exports.getMyRegistrationsByUserId = async (req, res) => {
     }
 };
 
-// Fungsi untuk membatalkan pendaftaran
 exports.cancelRegistration = async (req, res) => {
     try {
         const { id } = req.params;
@@ -332,9 +297,6 @@ exports.cancelRegistration = async (req, res) => {
     }
 };
 
-// ===== FITUR BARU: Upload KRS, Lihat Peserta, Download KRS =====
-
-// Fungsi untuk upload file KRS
 exports.uploadKRS = (req, res) => {
     console.log('=== UPLOAD KRS REQUEST RECEIVED ===');
 
@@ -368,7 +330,6 @@ exports.uploadKRS = (req, res) => {
             });
         }
 
-        // Buat URL untuk mengakses KRS
         const baseUrl = `${req.protocol}://${req.get('host')}`;
         const krsUrl = `${baseUrl}/uploads/krs/${req.file.filename}`;
 
@@ -390,7 +351,6 @@ exports.uploadKRS = (req, res) => {
 };
 
 
-// Fungsi untuk mengecek apakah NIM sudah terdaftar di event tertentu (dari main)
 exports.checkNimExists = async (req, res) => {
     try {
         const { eventId, nim } = req.params;
@@ -425,7 +385,6 @@ exports.checkNimExists = async (req, res) => {
     }
 };
 
-// Fungsi untuk mendapatkan peserta yang terdaftar di suatu event (untuk creator)
 exports.getParticipantsByEvent = async (req, res) => {
     try {
         const { eventId } = req.params;
@@ -440,7 +399,6 @@ exports.getParticipantsByEvent = async (req, res) => {
             });
         }
 
-        // Query untuk mendapatkan semua peserta event
         const sql = `SELECT 
                         r.id as registration_id,
                         r.event_id,
@@ -477,7 +435,6 @@ exports.getParticipantsByEvent = async (req, res) => {
     }
 };
 
-// Fungsi untuk mendapatkan jumlah pendaftar per event (untuk validasi kuota)
 exports.getRegistrationCount = async (req, res) => {
     try {
         const { eventId } = req.params;
@@ -492,7 +449,6 @@ exports.getRegistrationCount = async (req, res) => {
             });
         }
 
-        // Count registrations for this event
         const [result] = await db.query(
             'SELECT COUNT(*) as count FROM registrations WHERE event_id = ?',
             [eventId]
@@ -516,15 +472,13 @@ exports.getRegistrationCount = async (req, res) => {
     }
 };
 
-// Fungsi untuk download/view file KRS
 exports.getKRSFile = async (req, res) => {
     try {
-        const { id } = req.params; // registration ID
+        const { id } = req.params;
 
         console.log('=== GET KRS FILE ===');
         console.log('Registration ID:', id);
 
-        // Get KRS URI from database
         const [registration] = await db.query(
             'SELECT krs_uri, name, nim FROM registrations WHERE id = ?',
             [id]
@@ -546,13 +500,11 @@ exports.getKRSFile = async (req, res) => {
             });
         }
 
-        // Extract filename from URL (ambil bagian setelah /uploads/krs/)
         const filename = krsUri.split('/').pop();
         const filePath = path.join(krsUploadDir, filename);
 
         console.log('File path:', filePath);
 
-        // Check if file exists
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({
                 status: 'fail',
@@ -560,7 +512,6 @@ exports.getKRSFile = async (req, res) => {
             });
         }
 
-        // Serve the file
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
 
@@ -578,9 +529,6 @@ exports.getKRSFile = async (req, res) => {
     }
 };
 
-// =============================================================
-
-// Get full registration data untuk edit form
 exports.getRegistrationDataByEventAndUser = async (req, res) => {
     try {
         const { eventId, userId } = req.params;
@@ -602,7 +550,6 @@ exports.getRegistrationDataByEventAndUser = async (req, res) => {
     }
 };
 
-// Get registration ID by event and user
 exports.getRegistrationIdByEventAndUser = async (req, res) => {
     try {
         const { eventId, userId } = req.params;
@@ -621,7 +568,6 @@ exports.getRegistrationIdByEventAndUser = async (req, res) => {
     }
 };
 
-// Update registration data
 exports.updateRegistration = async (req, res) => {
     try {
         const { id } = req.params;

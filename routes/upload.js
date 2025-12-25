@@ -5,7 +5,6 @@ const fs = require('fs');
 
 const router = express.Router();
 
-// Pastikan folder uploads ada saat module di-load
 const uploadDir = path.join(__dirname, '../uploads');
 console.log('Upload directory:', uploadDir);
 
@@ -21,14 +20,12 @@ if (!fs.existsSync(uploadDir)) {
     console.log('Uploads directory already exists');
 }
 
-// Konfigurasi penyimpanan file
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         console.log('Multer destination - saving to:', uploadDir);
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
-        // Buat nama file unik dengan timestamp
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         const ext = path.extname(file.originalname) || '.jpg';
         const filename = `event-${uniqueSuffix}${ext}`;
@@ -37,18 +34,14 @@ const storage = multer.diskStorage({
     }
 });
 
-// Filter untuk hanya menerima gambar - diperbaiki untuk menerima image/* dari Android
 const fileFilter = (req, file, cb) => {
     console.log('File filter - checking file:', file.originalname, 'mimetype:', file.mimetype);
 
-    // Terima semua tipe image (termasuk image/*)
     const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/*'];
     const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
 
-    // Cek mimetype
     const isMimeTypeAllowed = allowedMimeTypes.includes(file.mimetype) || file.mimetype.startsWith('image/');
 
-    // Cek ekstensi file sebagai fallback
     const ext = path.extname(file.originalname).toLowerCase();
     const isExtensionAllowed = allowedExtensions.includes(ext);
 
@@ -64,21 +57,18 @@ const fileFilter = (req, file, cb) => {
     }
 };
 
-// Konfigurasi multer
 const upload = multer({
     storage: storage,
     fileFilter: fileFilter,
     limits: {
-        fileSize: 10 * 1024 * 1024 // Maksimum 10MB (naik dari 5MB)
+        fileSize: 10 * 1024 * 1024
     }
 });
 
-// Endpoint upload gambar dengan error handling yang lebih baik
 router.post('/', (req, res) => {
     console.log('=== UPLOAD REQUEST RECEIVED ===');
     console.log('Content-Type:', req.get('Content-Type'));
 
-    // Gunakan upload.single dengan callback untuk menangkap error multer
     upload.single('image')(req, res, (err) => {
         if (err) {
             console.error('Multer error:', err.message);
@@ -115,7 +105,6 @@ router.post('/', (req, res) => {
                 });
             }
 
-            // Buat URL untuk mengakses gambar
             const baseUrl = `${req.protocol}://${req.get('host')}`;
             const imageUrl = `${baseUrl}/uploads/${req.file.filename}`;
 
@@ -146,4 +135,3 @@ router.post('/', (req, res) => {
 });
 
 module.exports = router;
-

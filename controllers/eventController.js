@@ -1,15 +1,12 @@
 const db = require('../config/db');
 const notificationService = require('../services/notificationService');
 
-// Fungsi untuk konversi format tanggal dari DD/MM/YYYY menjadi YYYY-MM-DD (format MySQL)
 function reformatDate(dateStr) {
     if (!dateStr) return null;
     try {
-        // Cek jika sudah format YYYY-MM-DD
         if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
             return dateStr;
         }
-        // Konversi dari DD/MM/YYYY ke YYYY-MM-DD
         const parts = dateStr.split('/');
         if (parts.length === 3) {
             const day = parts[0].padStart(2, '0');
@@ -24,12 +21,9 @@ function reformatDate(dateStr) {
     }
 }
 
-// Fungsi untuk format tanggal dari MySQL Date object ke string YYYY-MM-DD
-// Ini memperbaiki masalah timezone yang menyebabkan tanggal mundur 1 hari
 function formatDateForResponse(dateValue) {
     if (!dateValue) return null;
     if (dateValue instanceof Date) {
-        // Gunakan getUTC untuk menghindari konversi timezone
         const year = dateValue.getFullYear();
         const month = String(dateValue.getMonth() + 1).padStart(2, '0');
         const day = String(dateValue.getDate()).padStart(2, '0');
@@ -38,7 +32,6 @@ function formatDateForResponse(dateValue) {
     return dateValue;
 }
 
-// Fungsi untuk memproses events dan memperbaiki format tanggal
 function processEventsDate(events) {
     return events.map(event => ({
         ...event,
@@ -46,7 +39,6 @@ function processEventsDate(events) {
     }));
 }
 
-// (Fungsi createEvent sudah benar dari langkah sebelumnya)
 exports.createEvent = async (req, res) => {
     try {
         const {
@@ -55,7 +47,6 @@ exports.createEvent = async (req, res) => {
             creator_id
         } = req.body;
 
-        // DEBUG: Log semua data yang diterima
         console.log("=== CREATE EVENT DEBUG ===");
         console.log("Received body:", JSON.stringify(req.body, null, 2));
         console.log("Received date:", date);
@@ -71,8 +62,6 @@ exports.createEvent = async (req, res) => {
 
         const quotaInt = parseInt(quota, 10) || 0;
 
-        // PERBAIKAN: Better validation for creator_id
-        // Handle null, undefined, empty string, or NaN values
         let creatorIdInt = null;
         if (creator_id !== null && creator_id !== undefined && creator_id !== '') {
             const parsed = parseInt(creator_id, 10);
@@ -82,7 +71,6 @@ exports.createEvent = async (req, res) => {
         }
         console.log("Parsed creator_id for DB:", creatorIdInt);
 
-        // VALIDASI: Cek field wajib
         if (!title || !type || !date || !timeStart || !timeEnd || !platformType || !locationDetail || !quota) {
             console.error("❌ Validation failed: Missing required fields");
             return res.status(400).json({
@@ -91,16 +79,13 @@ exports.createEvent = async (req, res) => {
             });
         }
 
-        // Handle thumbnailUri - jika null/undefined/empty, set sebagai NULL di database
         const thumbnailUriValue = (thumbnailUri && thumbnailUri.trim() !== '') ? thumbnailUri : null;
         console.log("Final thumbnailUri for DB:", thumbnailUriValue);
 
-        // Event baru menunggu persetujuan admin (status = 'menunggu')
         const sql = `INSERT INTO events 
                         (title, type, date, time_start, time_end, platform_type, location_detail, quota, thumbnail_uri, creator_id, status, created_at)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'menunggu', NOW())`;
 
-        // DEBUG: Log nilai yang akan dimasukkan ke DB
         console.log("Values for DB insert:", {
             title, type, formattedDate, timeStart, timeEnd,
             platformType, locationDetail, quotaInt, thumbnailUriValue,
@@ -123,7 +108,6 @@ exports.createEvent = async (req, res) => {
         console.error("❌ Error creating event:", error);
         console.error("Error stack:", error.stack);
 
-        // Provide more detailed error message
         let errorMessage = 'Gagal membuat event';
         if (error.code === 'ER_DUP_ENTRY') {
             errorMessage = 'Event dengan data yang sama sudah ada';
@@ -137,13 +121,11 @@ exports.createEvent = async (req, res) => {
     }
 };
 
-// (Fungsi getAllEvents sudah benar dari langkah sebelumnya)
 exports.getAllEvents = async (req, res) => {
     try {
         const sql = "SELECT * FROM events WHERE status = 'disetujui' ORDER BY date DESC";
         const [events] = await db.query(sql);
 
-        // Proses tanggal untuk menghindari masalah timezone
         const processedEvents = processEventsDate(events);
 
         res.status(200).json({ status: 'success', data: processedEvents });
@@ -153,20 +135,17 @@ exports.getAllEvents = async (req, res) => {
     }
 };
 
-// --- FUNGSI API BARU ---
 exports.getMyCreatedEvents = async (req, res) => {
     try {
-        const { userId } = req.params; // Ambil ID user dari URL
+        const { userId } = req.params;
 
         if (!userId) {
             return res.status(400).json({ status: 'fail', message: 'User ID diperlukan' });
         }
 
-        // Ambil SEMUA event (termasuk 'menunggu') yang creator_id-nya cocok
         const sql = "SELECT * FROM events WHERE creator_id = ? ORDER BY date DESC";
         const [events] = await db.query(sql, [userId]);
 
-        // Proses tanggal untuk menghindari masalah timezone
         const processedEvents = processEventsDate(events);
 
         res.status(200).json({ status: 'success', data: processedEvents });
@@ -176,7 +155,6 @@ exports.getMyCreatedEvents = async (req, res) => {
     }
 };
 
-// --- FUNGSI UPDATE EVENT ---
 exports.updateEvent = async (req, res) => {
     try {
         const { id } = req.params;
@@ -192,7 +170,6 @@ exports.updateEvent = async (req, res) => {
         const formattedDate = reformatDate(date);
         const quotaInt = parseInt(quota, 10) || 0;
 
-        // Validate end time is after start time
         if (timeStart && timeEnd) {
             const [startHour, startMin] = timeStart.split(':').map(Number);
             const [endHour, endMin] = timeEnd.split(':').map(Number);
@@ -234,7 +211,6 @@ exports.updateEvent = async (req, res) => {
     }
 };
 
-// --- FUNGSI DELETE EVENT ---
 exports.deleteEvent = async (req, res) => {
     const connection = await db.getConnection();
 
@@ -244,10 +220,8 @@ exports.deleteEvent = async (req, res) => {
         console.log("=== DELETE EVENT DEBUG ===");
         console.log("Event ID:", id);
 
-        // Mulai transaction
         await connection.beginTransaction();
 
-        // Cek apakah event ada
         const [event] = await connection.query(
             'SELECT id, title FROM events WHERE id = ?',
             [id]
@@ -263,7 +237,6 @@ exports.deleteEvent = async (req, res) => {
 
         console.log(`📋 Deleting event: ${event[0].title} (ID: ${id})`);
 
-        // Hapus semua data terkait event dengan nama kolom yang benar
         let deletedCount = {
             notifications: 0,
             registrations: 0,
@@ -271,8 +244,6 @@ exports.deleteEvent = async (req, res) => {
             documentations: 0
         };
 
-        // 1. Hapus notifications terkait event
-        // Di tabel notifications, kolom yang merujuk ke event adalah 'related_id'
         try {
             const [notifResult] = await connection.query(
                 'DELETE FROM notifications WHERE related_id = ?',
@@ -284,7 +255,6 @@ exports.deleteEvent = async (req, res) => {
             console.log(`⚠️ Error deleting notifications: ${err.message}`);
         }
 
-        // 2. Hapus registrations terkait
         try {
             const [regResult] = await connection.query(
                 'DELETE FROM registrations WHERE event_id = ?',
@@ -296,7 +266,6 @@ exports.deleteEvent = async (req, res) => {
             console.log(`⚠️ Error deleting registrations: ${err.message}`);
         }
 
-        // 3. Hapus feedback terkait
         try {
             const [feedbackResult] = await connection.query(
                 'DELETE FROM feedback WHERE event_id = ?',
@@ -308,7 +277,6 @@ exports.deleteEvent = async (req, res) => {
             console.log(`⚠️ Error deleting feedback: ${err.message}`);
         }
 
-        // 4. Hapus documentations terkait
         try {
             const [docResult] = await connection.query(
                 'DELETE FROM documentations WHERE event_id = ?',
@@ -320,14 +288,12 @@ exports.deleteEvent = async (req, res) => {
             console.log(`⚠️ Error deleting documentations: ${err.message}`);
         }
 
-        // 5. Hapus event itu sendiri
         const [eventResult] = await connection.query(
             'DELETE FROM events WHERE id = ?',
             [id]
         );
         console.log(`🗑️ Deleted event (affected rows: ${eventResult.affectedRows})`);
 
-        // Commit transaction jika semua berhasil
         await connection.commit();
 
         console.log(`✅ Event ${id} deleted successfully`);
@@ -339,7 +305,6 @@ exports.deleteEvent = async (req, res) => {
         });
 
     } catch (error) {
-        // Rollback jika terjadi error
         await connection.rollback();
 
         console.error("❌ Error deleting event:", error);
@@ -347,7 +312,6 @@ exports.deleteEvent = async (req, res) => {
         console.error("Error message:", error.message);
         console.error("Error stack:", error.stack);
 
-        // Berikan pesan error yang lebih detail
         let errorMessage = 'Gagal menghapus event';
         if (error.code === 'ER_ROW_IS_REFERENCED_2') {
             errorMessage = 'Event tidak dapat dihapus karena masih memiliki data terkait';
@@ -361,7 +325,6 @@ exports.deleteEvent = async (req, res) => {
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     } finally {
-        // Pastikan connection dikembalikan ke pool
         connection.release();
     }
 };

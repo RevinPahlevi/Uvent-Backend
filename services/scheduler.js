@@ -1,41 +1,27 @@
-// Scheduler Service - Automated Tasks with Precision Timing
-// Purpose: Send notifications when events START (documentation) and END (feedback)
-// Updated: 2025-12-22
-
 const cron = require('node-cron');
 const db = require('../config/db');
 const notificationService = require('./notificationService');
 
-// Store scheduled timeouts for cleanup
 let scheduledEndTimeouts = [];
 let scheduledStartTimeouts = [];
 
-/**
- * Initialize all scheduled jobs
- */
 function initScheduler() {
     console.log('✓ Scheduler initialized');
 
-    // ===== PRECISION FEEDBACK REMINDER (EVENT END) =====
     scheduleNextEventNotification();
 
-    // ===== DOCUMENTATION REMINDER (EVENT START) =====
     scheduleEventStartNotifications();
 
-    // PRECISION CHECK: Re-schedule every 30 seconds for near-instant notifications
-    // This ensures any new events or schedule changes are picked up quickly
     cron.schedule('*/30 * * * * *', async () => {
         await scheduleNextEventNotification();
         await scheduleEventStartNotifications();
     });
 
-    // Backup check every 10 seconds for any missed events (near-instant)
     cron.schedule('*/10 * * * * *', async () => {
         await sendFeedbackReminders();
         await sendDocumentationReminders();
     });
 
-    // Run immediately on startup (reduced delay from 5s to 1s)
     setTimeout(async () => {
         console.log('\n[SCHEDULER] Initial check on startup...');
         await sendFeedbackReminders();
@@ -45,18 +31,11 @@ function initScheduler() {
     }, 1000);
 }
 
-/**
- * Schedule notification for the next event that will end
- * AND immediately send notifications for events that have ALREADY ENDED
- * This provides INSTANT notifications - NO DELAY
- */
 async function scheduleNextEventNotification() {
     try {
-        // Clear any existing scheduled timeouts
         scheduledEndTimeouts.forEach(timeout => clearTimeout(timeout));
         scheduledEndTimeouts = [];
 
-        // ===== IMMEDIATE: Send notifications for events that have ALREADY ENDED =====
         const [alreadyEndedEvents] = await db.query(`
             SELECT e.id, e.title, e.date, e.time_end
             FROM events e
@@ -77,7 +56,6 @@ async function scheduleNextEventNotification() {
             }
         }
 
-        // ===== SCHEDULED: Find ALL events ending in the next 24 hours =====
         const [upcomingEvents] = await db.query(`
             SELECT e.id, e.title, e.date, e.time_end,
                    TIMESTAMPDIFF(SECOND, NOW(), TIMESTAMP(e.date, e.time_end)) as seconds_until_end
@@ -97,9 +75,7 @@ async function scheduleNextEventNotification() {
 
         console.log(`[SCHEDULER] Found ${upcomingEvents.length} events ending in next 24 hours`);
 
-        // Schedule timeout for EACH event - NO delay, NO buffer
         for (const event of upcomingEvents) {
-            // Minimum 0ms - trigger immediately if already passed
             const secondsUntilEnd = Math.max(event.seconds_until_end, 0);
             const msUntilEnd = secondsUntilEnd * 1000;
 
@@ -109,7 +85,6 @@ async function scheduleNextEventNotification() {
                 console.log(`\n[SCHEDULER] ⏰ Event "${event.title}" ENDED! Sending feedback notifications...`);
                 await sendNotificationsForEvent(event.id, event.title);
 
-                // Schedule next event after this one fires
                 await scheduleNextEventNotification();
             }, msUntilEnd);
 
@@ -121,12 +96,8 @@ async function scheduleNextEventNotification() {
     }
 }
 
-/**
- * Send notifications for a specific event that just ended
- */
 async function sendNotificationsForEvent(eventId, eventTitle) {
     try {
-        // Get participants who need notification
         const [participants] = await db.query(`
             SELECT r.user_id, u.name as user_name
             FROM registrations r
@@ -174,9 +145,6 @@ async function sendNotificationsForEvent(eventId, eventTitle) {
     }
 }
 
-/**
- * Backup: Send feedback reminders for any missed events
- */
 async function sendFeedbackReminders() {
     try {
         const [endedEvents] = await db.query(`
@@ -227,7 +195,6 @@ async function sendFeedbackReminders() {
                     );
                     if (result.inApp || result.push) totalSent++;
                 } catch (err) {
-                    // Silent fail for backup
                 }
             }
         }
@@ -240,22 +207,11 @@ async function sendFeedbackReminders() {
     }
 }
 
-// ========================================================================
-// DOCUMENTATION REMINDERS (Event Start)
-// ========================================================================
-
-/**
- * Schedule notifications for events that are about to START
- * AND immediately send notifications for events that have ALREADY STARTED
- */
 async function scheduleEventStartNotifications() {
     try {
-        // Clear existing start timeouts
         scheduledStartTimeouts.forEach(timeout => clearTimeout(timeout));
         scheduledStartTimeouts = [];
 
-        // ===== IMMEDIATE: Send notifications for events that have ALREADY STARTED =====
-        // These are events currently running (started but not ended) that haven't received doc notifications
         const [alreadyStartedEvents] = await db.query(`
             SELECT e.id, e.title, e.date, e.time_start, e.time_end
             FROM events e
@@ -274,7 +230,6 @@ async function scheduleEventStartNotifications() {
             }
         }
 
-        // ===== SCHEDULED: Find events starting in the next 24 hours =====
         const [upcomingEvents] = await db.query(`
             SELECT e.id, e.title, e.date, e.time_start,
                    TIMESTAMPDIFF(SECOND, NOW(), TIMESTAMP(e.date, e.time_start)) as seconds_until_start
@@ -304,7 +259,6 @@ async function scheduleEventStartNotifications() {
                 console.log(`\n[SCHEDULER] 📸 Event "${event.title}" STARTED! Sending documentation reminders...`);
                 await sendDocumentationNotificationsForEvent(event.id, event.title);
 
-                // Reschedule for next events
                 await scheduleEventStartNotifications();
             }, msUntilStart);
 
@@ -316,12 +270,8 @@ async function scheduleEventStartNotifications() {
     }
 }
 
-/**
- * Send documentation reminder notifications for a specific event that just started
- */
 async function sendDocumentationNotificationsForEvent(eventId, eventTitle) {
     try {
-        // Get participants who need notification (haven't received doc reminder yet)
         const [participants] = await db.query(`
             SELECT r.user_id, u.name as user_name
             FROM registrations r
@@ -365,12 +315,8 @@ async function sendDocumentationNotificationsForEvent(eventId, eventTitle) {
     }
 }
 
-/**
- * Backup: Send documentation reminders for any missed event starts
- */
 async function sendDocumentationReminders() {
     try {
-        // Find events that have started but not ended (currently running)
         const [runningEvents] = await db.query(`
             SELECT e.id, e.title, e.date, e.time_start, e.time_end
             FROM events e
@@ -413,7 +359,6 @@ async function sendDocumentationReminders() {
                     );
                     if (result.inApp || result.push) totalSent++;
                 } catch (err) {
-                    // Silent fail for backup
                 }
             }
         }

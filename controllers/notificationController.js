@@ -1,28 +1,10 @@
-// Notification Controller - API Endpoints
-// Purpose: Handle FCM token management & in-app notification retrieval
-// Created: 2025-12-17
-
 const db = require('../config/db');
 const notificationService = require('../services/notificationService');
 
-/**
- * POST /api/notifications/fcm-token
- * Save or update FCM token for push notifications
- * 
- * Request body:
- * {
- *   user_id: number,
- *   fcm_token: string,
- *   device_id: string (optional),
- *   device_type: 'android' | 'ios',
- *   app_version: string (optional)
- * }
- */
 exports.saveFCMToken = async (req, res) => {
     try {
         const { user_id, fcm_token, device_id, device_type, app_version } = req.body;
 
-        // Validation
         if (!user_id || !fcm_token) {
             return res.status(400).json({
                 status: 'fail',
@@ -30,7 +12,6 @@ exports.saveFCMToken = async (req, res) => {
             });
         }
 
-        // Insert or update token (ON DUPLICATE KEY UPDATE)
         await db.query(
             `INSERT INTO user_fcm_tokens (user_id, fcm_token, device_id, device_type, app_version)
              VALUES (?, ?, ?, ?, ?)
@@ -60,17 +41,11 @@ exports.saveFCMToken = async (req, res) => {
     }
 };
 
-/**
- * GET /api/notifications/user/:userId
- * Get user notifications for in-app display
- * Query params: limit, offset
- */
 exports.getUserNotifications = async (req, res) => {
     try {
         const { userId } = req.params;
         const { limit = 50, offset = 0 } = req.query;
 
-        // Get notifications
         const [notifications] = await db.query(
             `SELECT id, title, body, type, related_id, is_read, created_at, notification_data
              FROM notifications
@@ -80,7 +55,6 @@ exports.getUserNotifications = async (req, res) => {
             [userId, parseInt(limit), parseInt(offset)]
         );
 
-        // Get unread count
         const [unreadCount] = await db.query(
             'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = FALSE',
             [userId]
@@ -105,10 +79,6 @@ exports.getUserNotifications = async (req, res) => {
     }
 };
 
-/**
- * PUT /api/notifications/:id/read
- * Mark single notification as read
- */
 exports.markAsRead = async (req, res) => {
     try {
         const { id } = req.params;
@@ -140,10 +110,6 @@ exports.markAsRead = async (req, res) => {
     }
 };
 
-/**
- * PUT /api/notifications/user/:userId/read-all
- * Mark all notifications as read for a user
- */
 exports.markAllAsRead = async (req, res) => {
     try {
         const { userId } = req.params;
@@ -168,10 +134,6 @@ exports.markAllAsRead = async (req, res) => {
     }
 };
 
-/**
- * DELETE /api/notifications/:id
- * Delete a notification
- */
 exports.deleteNotification = async (req, res) => {
     try {
         const { id } = req.params;
@@ -203,22 +165,10 @@ exports.deleteNotification = async (req, res) => {
     }
 };
 
-/**
- * POST /api/notifications/send-feedback-reminders
- * Check for ended events and send feedback reminder notifications to participants
- * 
- * Logic:
- * 1. Query events where (date + time_end) < NOW()
- * 2. For each ended event, find participants who haven't received feedback notification
- * 3. Send notification: "Event '{title}' telah selesai! Berikan feedbackmu 📝"
- * 4. Mark participants as notified to avoid spam
- */
 exports.sendFeedbackReminders = async (req, res) => {
     try {
         console.log("=== SEND FEEDBACK REMINDERS ===");
 
-        // 1. Query events yang sudah selesai (date + time_end < NOW)
-        // Events yang tanggalnya sudah lewat atau tanggal hari ini dengan waktu sudah lewat
         const [endedEvents] = await db.query(`
             SELECT e.id, e.title, e.date, e.time_end
             FROM events e
@@ -235,9 +185,6 @@ exports.sendFeedbackReminders = async (req, res) => {
         for (const event of endedEvents) {
             console.log(`Processing event: ${event.id} - ${event.title}`);
 
-            // 2. Get participants who registered for this event
-            // AND haven't received feedback reminder notification yet
-            // AND haven't given feedback yet
             const [participants] = await db.query(`
                 SELECT r.user_id, u.name as user_name
                 FROM registrations r
@@ -245,13 +192,11 @@ exports.sendFeedbackReminders = async (req, res) => {
                 WHERE r.event_id = ?
                 AND r.user_id IS NOT NULL
                 AND r.user_id NOT IN (
-                    -- Exclude users who already received feedback_reminder for this event
                     SELECT n.user_id FROM notifications n 
                     WHERE n.type = 'feedback_reminder' 
                     AND n.related_id = ?
                 )
                 AND r.user_id NOT IN (
-                    -- Exclude users who already gave feedback for this event
                     SELECT f.user_id FROM feedbacks f 
                     WHERE f.event_id = ?
                 )
@@ -259,7 +204,6 @@ exports.sendFeedbackReminders = async (req, res) => {
 
             console.log(`  → ${participants.length} participants need notification`);
 
-            // 3. Send notification to each participant
             for (const participant of participants) {
                 try {
                     const result = await notificationService.sendDualNotification(

@@ -1,6 +1,5 @@
 const db = require('../config/db');
 
-// Fungsi untuk membuat dokumentasi
 exports.createDocumentation = async (req, res) => {
     try {
         console.log("=== CREATE DOCUMENTATION DEBUG ===");
@@ -8,7 +7,6 @@ exports.createDocumentation = async (req, res) => {
 
         const { event_id, user_id, description, photo_uri } = req.body;
 
-        // Validasi input
         if (!event_id || !user_id) {
             return res.status(400).json({
                 status: 'fail',
@@ -16,7 +14,6 @@ exports.createDocumentation = async (req, res) => {
             });
         }
 
-        // Insert ke database
         const sql = `INSERT INTO documentations 
                         (event_id, user_id, description, photo_uri)
                      VALUES (?, ?, ?, ?)`;
@@ -39,7 +36,6 @@ exports.createDocumentation = async (req, res) => {
     }
 };
 
-// Fungsi untuk mengambil semua dokumentasi untuk sebuah event
 exports.getDocumentationByEvent = async (req, res) => {
     try {
         const { eventId } = req.params;
@@ -48,7 +44,8 @@ exports.getDocumentationByEvent = async (req, res) => {
             return res.status(400).json({ status: 'fail', message: 'Event ID diperlukan' });
         }
 
-        const sql = `SELECT d.*, u.name as user_name 
+        const sql = `SELECT d.*, u.name as user_name,
+                            CONVERT_TZ(d.created_at, '+00:00', '+07:00') as created_at_wib
                      FROM documentations d
                      LEFT JOIN users u ON d.user_id = u.id
                      WHERE d.event_id = ?
@@ -56,19 +53,22 @@ exports.getDocumentationByEvent = async (req, res) => {
 
         const [docs] = await db.query(sql, [eventId]);
 
-        res.status(200).json({ status: 'success', data: docs });
+        const docsWithLocalTime = docs.map(doc => ({
+            ...doc,
+            created_at: doc.created_at_wib || doc.created_at
+        }));
+
+        res.status(200).json({ status: 'success', data: docsWithLocalTime });
     } catch (error) {
         console.error("Error getting documentations:", error);
         res.status(500).json({ status: 'fail', message: error.message });
     }
 };
 
-// Fungsi untuk menghapus dokumentasi
 exports.deleteDocumentation = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Cek apakah dokumentasi ada
         const [doc] = await db.query(
             'SELECT id FROM documentations WHERE id = ?',
             [id]
@@ -88,7 +88,6 @@ exports.deleteDocumentation = async (req, res) => {
     }
 };
 
-// Fungsi untuk mengupdate dokumentasi (hanya description)
 exports.updateDocumentation = async (req, res) => {
     try {
         const { id } = req.params;
@@ -98,7 +97,6 @@ exports.updateDocumentation = async (req, res) => {
         console.log("Doc ID:", id);
         console.log("New description:", description);
 
-        // Cek apakah dokumentasi ada
         const [doc] = await db.query(
             'SELECT id FROM documentations WHERE id = ?',
             [id]
@@ -108,13 +106,12 @@ exports.updateDocumentation = async (req, res) => {
             return res.status(404).json({ status: 'fail', message: 'Dokumentasi tidak ditemukan' });
         }
 
-        // Update hanya description (foto tidak boleh diubah)
         const sql = 'UPDATE documentations SET description = ? WHERE id = ?';
         await db.query(sql, [description, id]);
 
-        res.status(200).json({ 
-            status: 'success', 
-            message: 'Dokumentasi berhasil diperbarui' 
+        res.status(200).json({
+            status: 'success',
+            message: 'Dokumentasi berhasil diperbarui'
         });
     } catch (error) {
         console.error("Error updating documentation:", error);

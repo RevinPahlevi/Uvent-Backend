@@ -1,12 +1,9 @@
 const jwt = require('jsonwebtoken');
 
-// Middleware untuk verifikasi JWT token
 function authenticateToken(req, res, next) {
-    // Get token dari header Authorization
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Format: "Bearer TOKEN"
+    const token = authHeader && authHeader.split(' ')[1];
 
-    // Jika tidak ada token
     if (!token) {
         return res.status(401).json({
             status: 'error',
@@ -14,7 +11,6 @@ function authenticateToken(req, res, next) {
         });
     }
 
-    // Verify token
     jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key_here_change_this_in_production_12345', (err, user) => {
         if (err) {
             return res.status(403).json({
@@ -23,7 +19,6 @@ function authenticateToken(req, res, next) {
             });
         }
 
-        // Token valid, attach user info ke request
         req.user = user;
         next();
     });

@@ -11,4 +11,4 @@ const pool = mysql.createPool({
     queueLimit: 0
 });
 
-module.exports = pool.promise(); // Menggunakan Promise agar bisa Async/Await
+module.exports = pool.promise();

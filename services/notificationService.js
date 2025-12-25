@@ -1,30 +1,6 @@
-// Notification Service - Dual Notification System
-// Purpose: Orchestrator untuk mengirim PUSH + IN-APP notification
-// Created: 2025-12-17
-
 const db = require('../config/db');
 const { admin, firebaseInitialized } = require('../config/firebase');
 
-/**
- * Send dual notification (In-App + Push)
- * 
- * ARCHITECTURE:
- * 1. IN-APP: Save to notifications table (always)
- * 2. PUSH: Send via FCM to user's devices (if token exists)
- * 
- * ERROR HANDLING:
- * - If in-app fails, push still attempts
- * - If push fails, in-app still saved
- * - Function NEVER throws error (graceful degradation)
- * 
- * @param {number} userId - Penerima notifikasi (user_id)
- * @param {string} title - Judul notifikasi
- * @param {string} body - Isi pesan notifikasi
- * @param {string} type - Tipe: 'registration', 'feedback', 'general', etc.
- * @param {number} relatedId - ID terkait (event_id, feedback_id, etc.)
- * @param {object} data - Extra metadata untuk notification
- * @returns {Promise<{inApp: boolean, push: boolean, errors: string[]}>}
- */
 exports.sendDualNotification = async (userId, title, body, type = 'general', relatedId = null, data = {}) => {
     const results = {
         inApp: false,
@@ -32,7 +8,6 @@ exports.sendDualNotification = async (userId, title, body, type = 'general', rel
         errors: []
     };
 
-    // ============= 1. IN-APP NOTIFICATION (Database) =============
     try {
         await db.query(
             `INSERT INTO notifications (user_id, title, body, type, related_id, notification_data, created_at)
@@ -48,9 +23,6 @@ exports.sendDualNotification = async (userId, title, body, type = 'general', rel
         console.error(`⚠ [IN-APP] Failed to save notification for user ${userId}:`, dbError.message);
     }
 
-    // ============= 2. PUSH NOTIFICATION (FCM) =============
-
-    // Check if Firebase initialized
     if (!firebaseInitialized) {
         console.log(`⊘ [PUSH] Firebase not initialized - skipping push notification`);
         results.errors.push('Firebase not initialized');
@@ -58,7 +30,6 @@ exports.sendDualNotification = async (userId, title, body, type = 'general', rel
     }
 
     try {
-        // Get active FCM tokens for user
         const [tokens] = await db.query(
             'SELECT fcm_token FROM user_fcm_tokens WHERE user_id = ? AND is_active = TRUE',
             [userId]
@@ -69,7 +40,6 @@ exports.sendDualNotification = async (userId, title, body, type = 'general', rel
             return results;
         }
 
-        // Prepare FCM message
         const fcmTokens = tokens.map(t => t.fcm_token);
 
         const message = {
@@ -80,9 +50,9 @@ exports.sendDualNotification = async (userId, title, body, type = 'general', rel
             data: {
                 type: type,
                 related_id: relatedId ? relatedId.toString() : '0',
-                click_action: 'FLUTTER_NOTIFICATION_CLICK', // For handling click
+                click_action: 'FLUTTER_NOTIFICATION_CLICK',
                 ...Object.keys(data).reduce((acc, key) => {
-                    acc[key] = String(data[key]); // FCM data must be strings
+                    acc[key] = String(data[key]);
                     return acc;
                 }, {})
             },
@@ -98,7 +68,6 @@ exports.sendDualNotification = async (userId, title, body, type = 'general', rel
             tokens: fcmTokens
         };
 
-        // Send via FCM
         const response = await admin.messaging().sendEachForMulticast(message);
 
         if (response.successCount > 0) {
@@ -106,7 +75,6 @@ exports.sendDualNotification = async (userId, title, body, type = 'general', rel
             console.log(`✓ [PUSH] Sent to ${response.successCount} device(s) for user ${userId}`);
         }
 
-        // Handle failed tokens
         if (response.failureCount > 0) {
             console.warn(`⚠ [PUSH] ${response.failureCount} device(s) failed for user ${userId}`);
 
@@ -117,7 +85,6 @@ exports.sendDualNotification = async (userId, title, body, type = 'general', rel
 
                     console.error(`✗ [PUSH] Failed token ${token.substring(0, 20)}...: ${errorCode}`);
 
-                    // Deactivate invalid/expired tokens
                     if (errorCode === 'messaging/invalid-registration-token' ||
                         errorCode === 'messaging/registration-token-not-registered') {
 
@@ -142,18 +109,6 @@ exports.sendDualNotification = async (userId, title, body, type = 'general', rel
     return results;
 };
 
-/**
- * Send notification to multiple users
- * Useful for broadcast notifications
- * 
- * @param {number[]} userIds - Array of user IDs
- * @param {string} title 
- * @param {string} body 
- * @param {string} type 
- * @param {number} relatedId 
- * @param {object} data 
- * @returns {Promise<{success: number, failed: number}>}
- */
 exports.sendDualNotificationBulk = async (userIds, title, body, type, relatedId, data = {}) => {
     let successCount = 0;
     let failedCount = 0;

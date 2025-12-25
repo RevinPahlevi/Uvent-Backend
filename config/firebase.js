@@ -1,20 +1,8 @@
-// Firebase Admin SDK Configuration
-// Purpose: Initialize Firebase for sending push notifications via FCM
-// Created: 2025-12-17
-
 const admin = require('firebase-admin');
-
-// IMPORTANT: You need to download serviceAccountKey.json from Firebase Console
-// Firebase Console → Project Settings → Service Accounts → Generate New Private Key
-// Place the file in this config/ directory
-// 
-// ⚠️ SECURITY: Add serviceAccountKey.json to .gitignore!
-// ⚠️ PRODUCTION: Use environment variables instead of file
 
 let firebaseInitialized = false;
 
 try {
-    // Check if firebase-admin is installed
     const serviceAccount = require('./serviceAccountKey.json');
 
     admin.initializeApp({

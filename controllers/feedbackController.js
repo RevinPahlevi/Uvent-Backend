@@ -1,6 +1,5 @@
 const db = require('../config/db');
 
-// Fungsi untuk membuat feedback/ulasan
 exports.createFeedback = async (req, res) => {
     try {
         console.log("=== CREATE FEEDBACK DEBUG ===");
@@ -14,7 +13,6 @@ exports.createFeedback = async (req, res) => {
         console.log("rating:", rating);
         console.log("review:", review);
 
-        // Validasi input
         if (!event_id || !user_id || !rating) {
             console.log("Validation failed: Missing required fields");
             return res.status(400).json({
@@ -23,7 +21,6 @@ exports.createFeedback = async (req, res) => {
             });
         }
 
-        // Validasi rating (1-5)
         if (rating < 1 || rating > 5) {
             return res.status(400).json({
                 status: 'fail',
@@ -31,7 +28,6 @@ exports.createFeedback = async (req, res) => {
             });
         }
 
-        // Cek apakah user sudah memberikan feedback untuk event ini
         const [existing] = await db.query(
             'SELECT id FROM feedbacks WHERE event_id = ? AND user_id = ?',
             [event_id, user_id]
@@ -44,7 +40,6 @@ exports.createFeedback = async (req, res) => {
             });
         }
 
-        // Cek apakah user adalah creator event (creator tidak boleh memberi feedback)
         const [eventData] = await db.query(
             'SELECT creator_id FROM events WHERE id = ?',
             [event_id]
@@ -57,7 +52,6 @@ exports.createFeedback = async (req, res) => {
             });
         }
 
-        // Insert ke database
         const sql = `INSERT INTO feedbacks 
                         (event_id, user_id, rating, review, photo_uri)
                      VALUES (?, ?, ?, ?, ?)`;
@@ -80,7 +74,6 @@ exports.createFeedback = async (req, res) => {
     }
 };
 
-// Fungsi untuk mengambil semua feedback untuk sebuah event
 exports.getFeedbackByEvent = async (req, res) => {
     try {
         const { eventId } = req.params;
@@ -104,7 +97,6 @@ exports.getFeedbackByEvent = async (req, res) => {
     }
 };
 
-// Fungsi untuk menghapus feedback
 exports.deleteFeedback = async (req, res) => {
     try {
         const { id, userId } = req.params;
@@ -113,7 +105,6 @@ exports.deleteFeedback = async (req, res) => {
         console.log("Feedback ID:", id);
         console.log("User ID:", userId);
 
-        // Cek apakah feedback ada dan milik user yang sama
         const [feedback] = await db.query(
             'SELECT user_id FROM feedbacks WHERE id = ?',
             [id]
@@ -137,7 +128,6 @@ exports.deleteFeedback = async (req, res) => {
     }
 };
 
-// Fungsi untuk mengupdate feedback
 exports.updateFeedback = async (req, res) => {
     try {
         const { id } = req.params;
@@ -150,7 +140,6 @@ exports.updateFeedback = async (req, res) => {
         console.log("Review:", review);
         console.log("Photo URI:", photo_uri);
 
-        // Validasi input
         if (!user_id || !rating) {
             return res.status(400).json({
                 status: 'fail',
@@ -158,7 +147,6 @@ exports.updateFeedback = async (req, res) => {
             });
         }
 
-        // Validasi rating (1-5)
         if (rating < 1 || rating > 5) {
             return res.status(400).json({
                 status: 'fail',
@@ -166,7 +154,6 @@ exports.updateFeedback = async (req, res) => {
             });
         }
 
-        // Cek apakah feedback ada
         const [feedback] = await db.query(
             'SELECT user_id FROM feedbacks WHERE id = ?',
             [id]
@@ -179,7 +166,6 @@ exports.updateFeedback = async (req, res) => {
             });
         }
 
-        // Cek apakah user adalah pemilik feedback
         if (feedback[0].user_id !== parseInt(user_id)) {
             return res.status(403).json({
                 status: 'fail',
@@ -187,7 +173,6 @@ exports.updateFeedback = async (req, res) => {
             });
         }
 
-        // Update feedback
         const sql = `UPDATE feedbacks 
                      SET rating = ?, review = ?, photo_uri = ?
                      WHERE id = ?`;

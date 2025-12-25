@@ -1,11 +1,9 @@
 const db = require('../config/db');
 const notificationService = require('../services/notificationService');
 
-// Hardcoded admin credentials
 const ADMIN_USERNAME = 'admin';
 const ADMIN_PASSWORD = 'admin123';
 
-// Fungsi untuk format tanggal dari MySQL Date object
 function formatDateForResponse(dateValue) {
     if (!dateValue) return null;
     if (dateValue instanceof Date) {
@@ -17,7 +15,6 @@ function formatDateForResponse(dateValue) {
     return dateValue;
 }
 
-// Proses events untuk format tanggal yang benar
 function processEventsDate(events) {
     return events.map(event => ({
         ...event,
@@ -26,7 +23,6 @@ function processEventsDate(events) {
     }));
 }
 
-// 1. Admin Login
 exports.adminLogin = (req, res) => {
     const { username, password } = req.body;
 
@@ -34,7 +30,7 @@ exports.adminLogin = (req, res) => {
         res.status(200).json({
             status: 'success',
             message: 'Login berhasil',
-            token: 'admin-token-' + Date.now() // Simple token for session
+            token: 'admin-token-' + Date.now()
         });
     } else {
         res.status(401).json({
@@ -44,12 +40,10 @@ exports.adminLogin = (req, res) => {
     }
 };
 
-// 2. Render halaman admin.ejs
 exports.renderAdminPage = (req, res) => {
     res.render('admin');
 };
 
-// 3. Get ALL events (untuk tab "Semua")
 exports.getAllEventsAdmin = async (req, res) => {
     try {
         const sql = `SELECT e.*, u.name as creator_name 
@@ -65,8 +59,6 @@ exports.getAllEventsAdmin = async (req, res) => {
     }
 };
 
-// 4. Get PENDING events (untuk tab "Diproses")
-// Menangkap event dengan status 'menunggu' DAN status kosong ''
 exports.getPendingEvents = async (req, res) => {
     try {
         const sql = `SELECT e.*, u.name as creator_name 
@@ -83,7 +75,6 @@ exports.getPendingEvents = async (req, res) => {
     }
 };
 
-// 5. Get APPROVED events (untuk tab "Disetujui")
 exports.getApprovedEvents = async (req, res) => {
     try {
         const sql = `SELECT e.*, u.name as creator_name 
@@ -100,7 +91,6 @@ exports.getApprovedEvents = async (req, res) => {
     }
 };
 
-// 6. Get REJECTED events (untuk tab "Ditolak")
 exports.getRejectedEvents = async (req, res) => {
     try {
         const sql = `SELECT e.*, u.name as creator_name 
@@ -117,7 +107,6 @@ exports.getRejectedEvents = async (req, res) => {
     }
 };
 
-// 7. Get single event by ID
 exports.getEventById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -139,12 +128,10 @@ exports.getEventById = async (req, res) => {
     }
 };
 
-// 8. Approve event
 exports.approveEvent = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // First, get event details before updating
         const [eventData] = await db.query('SELECT title, type FROM events WHERE id = ?', [id]);
 
         if (eventData.length === 0) {
@@ -153,7 +140,6 @@ exports.approveEvent = async (req, res) => {
 
         const event = eventData[0];
 
-        // Update event status to 'disetujui'
         const sql = "UPDATE events SET status = 'disetujui' WHERE id = ?";
         const [result] = await db.query(sql, [id]);
 
@@ -163,20 +149,16 @@ exports.approveEvent = async (req, res) => {
 
         console.log(`✅ Event ${id} approved: ${event.title}`);
 
-        // ============= BROADCAST NOTIFICATION TO ALL USERS =============
-        // Send notification asynchronously (non-blocking)
         setImmediate(async () => {
             try {
                 console.log(`📢 Broadcasting event approval notification for: ${event.title}`);
 
-                // Get all user IDs from database
                 const [users] = await db.query('SELECT id FROM users');
                 const userIds = users.map(user => user.id);
 
                 console.log(`Found ${userIds.length} users to notify`);
 
                 if (userIds.length > 0) {
-                    // Send bulk notification
                     const notifResult = await notificationService.sendDualNotificationBulk(
                         userIds,
                         'Event Baru Tersedia! 🎉',
@@ -196,7 +178,6 @@ exports.approveEvent = async (req, res) => {
                 }
 
             } catch (notifError) {
-                // Notification failure should NOT crash the approval
                 console.error("⚠️ Broadcast notification failed (event still approved):", notifError.message);
             }
         });
@@ -208,13 +189,9 @@ exports.approveEvent = async (req, res) => {
     }
 };
 
-// 9. Reject event
 exports.rejectEvent = async (req, res) => {
     try {
         const { id } = req.params;
-        // Note: rejection_reason is not stored in database for now
-        // If you want to store it, add the column to events table first:
-        // ALTER TABLE events ADD COLUMN rejection_reason TEXT;
 
         const sql = "UPDATE events SET status = 'ditolak' WHERE id = ?";
         const [result] = await db.query(sql, [id]);
